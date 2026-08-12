@@ -7,11 +7,11 @@ authors = [
     { name = "Ali Vakilzadeh", email = "ali.vakilzadeh@gmail.com" }
 ]
 dependencies = [
-    "flet[all]",
-    "flet-camera",
-    "google-genai",
-    "google-api-python-client",
-    "google-auth",
+    "flet==0.86.5",
+    "flet-camera==0.86.5",
+    "google-genai==2.17.0",
+    "google-api-python-client==2.198.0",
+    "google-auth==2.56.3",
 ]
 
 [dependency-groups]
