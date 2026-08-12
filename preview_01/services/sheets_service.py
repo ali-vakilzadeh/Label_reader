@@ -24,7 +24,7 @@ async def append_record(settings: dict[str, str], record: dict[str, str]) -> Non
         values = [[record.get(field, "") for field in FIELDS] + [record.get("timestamp", "")]]
         service.spreadsheets().values().append(
             spreadsheetId=spreadsheet_id,
-            range=f"{worksheet}!A:H",
+            range=f"{worksheet}!A:I",
             valueInputOption="USER_ENTERED",
             insertDataOption="INSERT_ROWS",
             body={"values": values},

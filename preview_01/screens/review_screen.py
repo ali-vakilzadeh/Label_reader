@@ -1,6 +1,6 @@
 import flet as ft
 
-from models.record import FIELDS, InventoryRecord
+from models.record import FIELDS, InventoryRecord, extraction_confidence, extraction_value
 
 
 class ReviewScreen:
@@ -27,23 +27,32 @@ class ReviewScreen:
                 controls=controls,
                 horizontal_alignment=ft.CrossAxisAlignment.CENTER,
             )
+
         record = InventoryRecord.from_extraction(self.app.extraction)
-        self.fields = {
-            field: ft.TextField(value=getattr(record, field), multiline=field == "care_instructions")
-            for field in FIELDS
-        }
         controls: list[ft.Control] = [
             ft.Text("Review label details", size=22, weight=ft.FontWeight.BOLD),
-            ft.Text("Edit anything that is missing or incorrect before saving."),
+            ft.Text("Edit anything that is missing or needs checking before saving."),
         ]
         if self.app.captured_image:
             controls.append(ft.Image(src=self.app.captured_image, fit=ft.BoxFit.CONTAIN))
+
         for field in FIELDS:
-            readable = field.replace("_", " ").title()
-            controls.append(ft.Text(readable, weight=ft.FontWeight.BOLD))
-            controls.append(self.fields[field])
-            if not getattr(record, field):
-                controls.append(ft.Text("Missing — enter this manually if available.", color=ft.Colors.YELLOW_800))
+            value = extraction_value(self.app.extraction, field)
+            confidence = extraction_confidence(self.app.extraction, field)
+            needs_check = confidence < 0.8 or not value
+            field_input = ft.TextField(
+                value=getattr(record, field),
+                multiline=field in {"care_instructions", "notes"},
+                border_color=ft.Colors.AMBER_700 if needs_check else None,
+                focused_border_color=ft.Colors.AMBER_700 if needs_check else None,
+            )
+            self.fields[field] = field_input
+            controls.append(ft.Text(field.replace("_", " ").title(), weight=ft.FontWeight.BOLD))
+            controls.append(ft.Text(f"Confidence: {confidence:.0%}"))
+            controls.append(field_input)
+            if needs_check:
+                controls.append(ft.Text("Check this — unclear or missing label data.", color=ft.Colors.AMBER_700))
+
         controls.extend([
             ft.Button(
                 content="Confirm & save",
@@ -57,7 +66,10 @@ class ReviewScreen:
         return ft.ListView(controls=controls, spacing=10)
 
     async def save(self, _event) -> None:
-        values = {field: input_field.value.strip() for field, input_field in self.fields.items()}
+        values = {
+            field: (input_field.value or "").strip()
+            for field, input_field in self.fields.items()
+        }
         await self.app.save_record(InventoryRecord.from_extraction(values))
 
     async def retake(self, _event) -> None:

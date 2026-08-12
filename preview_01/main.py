@@ -18,7 +18,7 @@ class WarehouseApp:
         self.picker = ft.FilePicker()
         self.settings: dict[str, str] = {}
         self.records: list[dict[str, str]] = []
-        self.captured_image: bytes | None = None
+        self.captured_images: list[bytes] = []
         self.extraction: dict[str, object] = {}
         self.loading = False
         self.notice = ""
@@ -59,7 +59,7 @@ class WarehouseApp:
             body = SettingsScreen(self).view()
         elif route == "/history":
             body = HistoryScreen(self).view()
-        elif route == "/review" and (self.captured_image or self.loading):
+        elif route == "/review" and (self.captured_images or self.loading):
             body = ReviewScreen(self).view()
         else:
             route = "/"
@@ -81,23 +81,41 @@ class WarehouseApp:
     def navigate(self, route: str) -> None:
         self.page.navigate(route)
 
-    async def process_image(self, image: bytes) -> None:
+    def add_photo(self, image: bytes) -> bool:
+        if len(self.captured_images) >= 4:
+            return False
+        self.captured_images.append(image)
+        self.extraction = {}
+        return True
+
+    def remove_photo(self, index: int) -> None:
+        if 0 <= index < len(self.captured_images):
+            self.captured_images.pop(index)
+            self.extraction = {}
+
+    def retake_photos(self) -> None:
+        self.captured_images.clear()
+        self.extraction = {}
+
+    async def process_images(self) -> None:
+        if not self.captured_images:
+            self.notice = "Capture at least one photo before reviewing the label."
+            return
         if not self.settings.get("api_key", "").strip():
             self.notice = "Add your Gemini API key in Settings before scanning."
             self.navigate("/settings")
             return
-        self.captured_image = image
         self.extraction = {}
         self.loading = True
         self.navigate("/review")
         try:
-            self.extraction = await extract_label(self.settings["api_key"], image)
+            self.extraction = await extract_label(self.settings["api_key"], self.captured_images)
         except Exception as exc:
             self.notice = str(exc)
             self.navigate("/")
         finally:
             self.loading = False
-        if self.captured_image and self.extraction:
+        if self.captured_images and self.extraction:
             self.navigate("/review")
 
     async def save_record(self, record: InventoryRecord) -> None:
@@ -112,6 +130,7 @@ class WarehouseApp:
                 self.notice = "Record saved on this device. Configure Sheets in Settings to sync it."
         except Exception as exc:
             self.notice = f"Saved on this device, but Google Sheets failed: {exc}"
+        self.retake_photos()
         self.navigate("/history")
 
     async def persist_settings(self) -> None:
