@@ -8,11 +8,14 @@ from google.genai import types
 from models.record import JSON_SCHEMA, PROMPT
 
 
-async def extract_label(api_key: str, image_bytes: bytes) -> dict[str, object]:
+async def extract_label(api_key: str, images: list[bytes]) -> dict[str, object]:
     if not api_key.strip():
         raise ValueError("Add a Gemini API key in Settings before scanning.")
 
     client = genai.Client(api_key=api_key)
+    contents = [PROMPT] + [
+        types.Part.from_bytes(data=img, mime_type="image/jpeg") for img in images
+    ]
     config = types.GenerateContentConfig(
         response_mime_type="application/json",
         response_json_schema=JSON_SCHEMA,
@@ -23,7 +26,7 @@ async def extract_label(api_key: str, image_bytes: bytes) -> dict[str, object]:
             response = await asyncio.to_thread(
                 client.models.generate_content,
                 model="gemini-2.5-flash",
-                contents=[PROMPT, types.Part.from_bytes(data=image_bytes, mime_type="image/jpeg")],
+                contents=contents,
                 config=config,
             )
             return json.loads(response.text)
@@ -32,4 +35,4 @@ async def extract_label(api_key: str, image_bytes: bytes) -> dict[str, object]:
             if "429" not in str(exc) or attempt == 2:
                 break
             await asyncio.sleep(2 ** attempt)
-    raise RuntimeError(f"Gemini could not read this label: {last_error}")
+    raise RuntimeError(f"Gemini could not read these labels: {last_error}")

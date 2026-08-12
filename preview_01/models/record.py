@@ -68,7 +68,6 @@ class InventoryRecord:
     care_instructions: str = ""
     notes: str = ""
     timestamp: str = ""
-    image_path: str = ""
 
     @classmethod
     def from_extraction(cls, values: dict[str, object]) -> "InventoryRecord":

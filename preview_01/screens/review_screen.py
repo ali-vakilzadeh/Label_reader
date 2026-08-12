@@ -8,15 +8,21 @@ class ReviewScreen:
         self.app = app
         self.fields: dict[str, ft.TextField] = {}
 
+    def thumbnails(self) -> ft.Row:
+        return ft.Row(
+            controls=[
+                ft.Image(src=image, fit=ft.BoxFit.CONTAIN, width=96, height=96)
+                for image in self.app.captured_images
+            ]
+        )
+
     def view(self) -> ft.Control:
         if self.app.loading:
             controls: list[ft.Control] = [
-                ft.Text("Photo captured", size=22, weight=ft.FontWeight.BOLD)
+                ft.Text("Photos captured", size=22, weight=ft.FontWeight.BOLD)
             ]
-            if self.app.captured_image:
-                controls.append(
-                    ft.Image(src=self.app.captured_image, fit=ft.BoxFit.CONTAIN, height=220)
-                )
+            if self.app.captured_images:
+                controls.append(self.thumbnails())
             controls.extend(
                 [
                     ft.ProgressRing(color=ft.Colors.YELLOW_700),
@@ -33,8 +39,8 @@ class ReviewScreen:
             ft.Text("Review label details", size=22, weight=ft.FontWeight.BOLD),
             ft.Text("Edit anything that is missing or needs checking before saving."),
         ]
-        if self.app.captured_image:
-            controls.append(ft.Image(src=self.app.captured_image, fit=ft.BoxFit.CONTAIN))
+        if self.app.captured_images:
+            controls.append(self.thumbnails())
 
         for field in FIELDS:
             value = extraction_value(self.app.extraction, field)
