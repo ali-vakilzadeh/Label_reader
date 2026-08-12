@@ -1,0 +1,30 @@
+[project]
+name = "label-ledger"
+version = "1.0.0"
+description = "A mobile warehouse app for photographing clothing labels, reviewing AI-extracted inventory data, and saving records locally or to Google Sheets."
+requires-python = ">=3.12"
+authors = [
+    { name = "Planning Backup", email = "gpc.pidemco.ppc@gmail.com" }
+]
+dependencies = [
+    "flet",
+    "flet-camera",
+    "google-genai",
+    "google-api-python-client",
+    "google-auth"
+]
+
+[dependency-groups]
+dev = [
+    "flet-cli",
+    "flet-desktop",
+    "flet-web"
+]
+
+[tool.flet.metadata]
+title = "Label Ledger"
+
+[tool.flet]
+org = "dev.flet"
+company = "Planning Backup"
+copyright = "Copyright (C) 2026 by Planning Backup"
