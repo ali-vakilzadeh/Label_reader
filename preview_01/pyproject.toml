@@ -21,6 +21,10 @@ dev = [
     "flet-web"
 ]
 
+[tool.flet.android]
+target_arch = ["arm64-v8a"]
+min_sdk_version = 26
+
 [tool.flet.metadata]
 title = "Label Ledger"
 
