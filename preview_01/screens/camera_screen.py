@@ -11,7 +11,8 @@ class CameraScreen:
         self.photo_strip = ft.Row(controls=[])
 
     def view(self) -> ft.Control:
-        if self.app.notice:self.status.value = self.app.notice; self.app.notice = ""
+        self.status.value = self.app.notice or "Starting rear camera…"
+        self.app.notice = ""
         self.refresh_photo_strip()
         return ft.Column(
             controls=[
