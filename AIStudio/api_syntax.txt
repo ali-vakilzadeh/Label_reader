@@ -1,0 +1,79 @@
+Middleware Server API Specifications
+To pair with the Android client, your Express middleware server handles the following endpoints:
+
+1. Device Handshake & Authentication
+
+Endpoint: POST /api/v1/auth/login
+Headers: Content-Type: application/json
+Request Body:
+
+code
+
+JSON
+{
+  "user_id": "operator_01",
+  "password": "enterprise2026"
+}
+
+Success Response (200 OK):
+
+code
+JSON
+
+{
+  "success": true,
+  "token": "eyJhbGciOiJIUzI1NiIsIn...",
+  "message": "Device authenticated successfully",
+  "expiresIn": "30d"
+}
+
+2. Health & Heartbeat
+Endpoint: GET /api/v1/health
+
+Success Response (200 OK):
+
+code
+JSON
+{
+  "status": "ok",
+  "service": "Apparel Vision Middleware",
+  "version": "1.0.0",
+  "geminiConfigured": true
+}
+
+3. Gemini Vision Extraction
+
+Endpoint: POST /api/v1/vision/extract
+
+Headers:
+Authorization: Bearer <token>
+Content-Type: multipart/form-data
+Multipart Form Fields:
+images: Array of image binary files (image/jpeg, up to 8 images)
+apparel_id: String (e.g. "BAR-849204")
+username: String (e.g. "operator_01")
+
+Success Response (200 OK):
+
+code
+JSON
+{
+  "success": true,
+  "apparel_id": "BAR-849204",
+  "username": "operator_01",
+  "timestamp": "2026-08-20T20:30:00.000Z",
+  "extraction": {
+    "category": { "value": "clothing", "confidence": 0.94 },
+    "sub_category": { "value": "jacket", "confidence": 0.91 },
+    "gender": { "value": "male", "confidence": 0.88 },
+    "season": { "value": "winter", "confidence": 0.86 },
+    "brand_name": { "value": "Patagonia", "confidence": 0.96 },
+    "country_of_origin": { "value": "Vietnam", "confidence": 0.92 },
+    "size": { "value": "L", "confidence": 0.95 },
+    "color": { "value": "blue", "confidence": 0.90 },
+    "material": { "value": "100% Recycled Polyester", "confidence": 0.89 },
+    "original_price": { "value": "$179.00", "confidence": 0.82 },
+    "netto": { "value": "420g", "confidence": 0.65 },
+    "brutto": { "value": "460g", "confidence": 0.58 }
+  }
+}
