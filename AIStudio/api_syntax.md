@@ -1,62 +1,65 @@
-Middleware Server API Specifications
-To pair with the Android client, your Express middleware server handles the following endpoints:
+# Middleware Server API Specifications
 
-1. Device Handshake & Authentication
+To pair with the Android client, the Express middleware server handles the following endpoints:
+
+## 1. Device Handshake & Authentication
 
 Endpoint: POST /api/v1/auth/login
+
 Headers: Content-Type: application/json
+
 Request Body:
 
-code
-
-JSON
+```JSON
 {
   "user_id": "operator_01",
   "password": "enterprise2026"
 }
+```
 
 Success Response (200 OK):
 
-code
-JSON
-
+```JSON
 {
   "success": true,
   "token": "eyJhbGciOiJIUzI1NiIsIn...",
   "message": "Device authenticated successfully",
   "expiresIn": "30d"
 }
+```
 
-2. Health & Heartbeat
+## 2. Health & Heartbeat
+
 Endpoint: GET /api/v1/health
 
 Success Response (200 OK):
 
-code
-JSON
+```JSON
 {
   "status": "ok",
   "service": "Apparel Vision Middleware",
   "version": "1.0.0",
   "geminiConfigured": true
 }
+```
 
-3. Gemini Vision Extraction
+## 3. Gemini Vision Extraction
 
 Endpoint: POST /api/v1/vision/extract
 
 Headers:
+```
 Authorization: Bearer <token>
 Content-Type: multipart/form-data
 Multipart Form Fields:
 images: Array of image binary files (image/jpeg, up to 8 images)
 apparel_id: String (e.g. "BAR-849204")
 username: String (e.g. "operator_01")
+```
 
 Success Response (200 OK):
 
-code
-JSON
+```JSON
 {
   "success": true,
   "apparel_id": "BAR-849204",
@@ -77,3 +80,4 @@ JSON
     "brutto": { "value": "460g", "confidence": 0.58 }
   }
 }
+```
