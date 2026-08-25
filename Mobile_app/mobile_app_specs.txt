@@ -1,0 +1,239 @@
+Here is the comprehensive report covering all tasks, workflows, and core functionalities implemented across the application:
+Apparel Vision & Intake Suite: System Architecture & Workflow Report
+1. System Overview & Purpose
+The Apparel Vision application is an enterprise-grade mobile intake, classification, and cataloging tool for apparel, footwear, and fashion accessories. It replaces slow, error-prone manual inventory entry with an intelligent pipeline combining on-device ML Kit barcode detection, multi-angle camera capture, asynchronous Gemini Vision AI extraction, human-in-the-loop review, duplicate item cloning, and an offline-first Room SQLite daily ledger.
+2. Core Workflows & Step-by-Step Journeys
+Workflow A: New Item Intake (Two-Phase Capture)
+Phase 1 – Barcode Lock (apparel_id):
+Real-Time ML Kit Scanning: As soon as the camera opens, Google ML Kit analyzes live viewfinder frames. An aiming reticle with an animated laser guide assists targeting.
+Supported Formats: EAN-13, UPC-A, QR Code, Code-128, Code-39, etc.
+Feedback: A haptic pulse and visual pill lock the detected barcode (e.g. BAR-849204).
+Manual / Fallback Options: Operators can type barcodes manually or tap "Gen Demo ID" in Demo Mode.
+Phase 2 – Multi-Angle Photo Capture:
+Batch Photo Capture: The operator captures 1 to 8 high-resolution photos of brand tags, care instructions, fabric labels, and overall product views (IMG_<apparel_id>_<index>.jpg).
+Thumbnail Strip & Re-Scan: A horizontal gallery lets the operator review or delete individual photos before finalizing.
+Batch Enqueue: Tapping "Finish Item" bundles the photos with the barcode and stores the scan batch in Room SQLite (STATUS_PENDING_VISION).
+Workflow B: AI Vision Extraction & Queue Management
+Background AI Processing:
+Automated / Manual Triggers: When Auto-Sync AI is active, scans are automatically transmitted. Alternatively, operators can trigger batch processing from the Review screen.
+Secure Multipart Transmission: The app streams the captured images and metadata via Retrofit (multipart/form-data) to the companion Node.js Express middleware server.
+Cloud Gemini Vision Analysis: The server routes image inputs to Gemini multimodal models using structured JSON schema extraction.
+Extracted Fields & Normalization:
+Category & Sub-Category: Standardized taxonomy (e.g., clothing, shoe, accessories mapped to specific garments).
+Gender & Season: male, female, unisex, kids / spring/summer, fall/winter, all-season.
+Brand, Origin & Sizing: International brand detection, country of origin, normalized sizes (S, M, L, 32W x 34L, US 10.5).
+Color, Material & Pricing: Primary color, fabric composition (e.g., 100% Merino Wool), currency-formatted MSRP.
+Physical Weight & Metrics: Net and Gross garment weight (e.g., netto and brutto).
+Per-Field Confidence Scoring:
+Every attribute includes a confidence score (
+ to 
+). Fields below 
+ threshold are flagged visually with an alert icon to ensure human verification.
+Workflow C: Operator Quality Assurance & Ledger Verification
+Interactive Review Screen:
+Scans are categorized into Pending Extraction, Extracted (Awaiting Review), and Verified (Completed).
+Human-in-the-Loop Inspector:
+Tapping an extracted item opens an interactive inspection dialog.
+Confidence-Coded Inputs: High-confidence fields appear in green/neutral; low-confidence extractions appear in amber with warning badges.
+Photo Reference Carousel: Operators can swipe through the original high-resolution tag photos while editing values.
+Confirmation: Tapping "Approve & Add to Ledger" moves the record to DailyLedgerEntity.
+Workflow D: Fast Item Duplication (Parent-Child Cloning)
+Use Case: Ingesting multiple identical garments that share identical tags/attributes but have distinct individual barcodes.
+Workflow:
+From the Daily Ledger or Review screen, tap the Duplicate (Copy) button.
+The operator scans or types the new barcode (apparel_id).
+The system creates a child record instantly copying all extracted attributes, without re-running AI vision.
+The child record is tagged with parent_item_id = <original_barcode> and displays a "Child of #<parent_id>" badge.
+Workflow E: Offline Mode, Demo Mode & Connectivity Safeguards
+Demo Mode (On / Off):
+Demo Mode OFF: If the device is offline or the server fails, all captures are safely cached locally in Room SQLite and remain pending until connectivity is validated.
+Demo Mode ON: If the server is unreachable, the app falls back to local heuristic extraction for testing/demonstrations.
+Isolated Demo Record Tagging:
+Any record processed in Demo Mode is automatically assigned sequential demo identifiers (demo_0001, demo_0002, ...).
+In both the Review list and Daily Ledger, demo items are tagged with an amber DEMO badge.
+In CSV exports, a dedicated record_type column clearly distinguishes DEMO from REAL records.
+First-Run Connection Floating Banner:
+On startup, if the server is unreachable and Demo Mode is not configured, a floating notification alerts the user:
+"server setting failed, set server connection or activate demo mode"
+Quick action buttons allow navigation to Server Settings or immediate Demo Mode activation.
+Workflow F: Data Export & Storage
+Daily Active View vs. Historical Records:
+Operators can clear the daily active screen at the end of a shift without losing data.
+A history view allows operators to inspect or restore historical SQLite records.
+CSV Ledger Sharing:
+Exports the entire ledger using Android's native Share Sheet.
+Header Format:
+code
+Text
+apparel_id,parent_item_id,username,timestamp,category,sub-category,gender,season,netto,brutto,brand_name,country_of_origin,size,color,material,original_price,record_type,image_files
+3. Technology Stack & Component Structure
+Component	Technology	Responsibility
+UI Framework	Jetpack Compose (Material 3)	Modern declarative UI, edge-to-edge layout, responsive viewports.
+Camera & Barcode	CameraX + Google ML Kit	Low-latency camera preview, touch-to-focus, barcode analysis reticle.
+Local Persistence	Room Database (SQLite v3)	Offline caching of scan batches (ScanEntity) and verified ledger items (DailyLedgerEntity).
+Secure Preferences	EncryptedSharedPreferences (AES-256)	Encrypted storage for device passwords, session tokens, and operator IDs.
+Networking	Retrofit + OkHttp + Moshi	Multipart image uploads, heartbeat monitoring, fast 4s connection checks.
+Image Loading	Coil Compose	Asynchronous image caching for captured tag photos.
+Middleware Server	Node.js + Express + Multer	Device JWT authentication, image receipt, Gemini API vision orchestration.
+
+Here is the detailed technical report explaining the record structures, how pictures are linked and organized, and the exact responsibilities and API contracts of the middleware server:
+Technical Specification: Records, Image Assignment & Middleware Pipeline
+1. Complete Record Structures (Data Schema)
+The application handles records across three primary phases:
+Intake / Unverified Scan Stage (ScanEntity in Room SQLite)
+AI Extraction Payload (VisionExtractionResponse / DTO)
+Approved Production Ledger (DailyLedgerEntity in Room SQLite & CSV Export)
+A. Intake Scan Entity (ScanEntity)
+Stored in the local SQLite database as soon as photos are taken for a barcode, before/during AI processing:
+Field Name	Type	Description
+apparel_id (PK)	String	Barcode identifier (e.g., BAR-849204) or Demo ID (demo_0001).
+parent_item_id	String?	Barcode of the parent garment if cloned; null for original scans.
+username	String	Operator/User ID logged into the device (e.g., operator_01).
+timestamp	String	Formatted creation timestamp (YYYY-MM-DD HH:MM:SS).
+image_files	String	Semicolon-delimited list of absolute local image paths on disk.
+status	Int	Queue state: 0 = Pending AI Vision, 1 = Extracted / In Review, 2 = Verified / Added to Ledger, 3 = Failed.
+is_demo_record	Boolean	true if generated under Demo Mode; false for genuine scans.
+category	String?	Extracted top-level taxonomy (e.g. clothing, shoe, accessories).
+sub_category	String?	Extracted garment type (e.g. jacket, dress, t-shirt, sneakers).
+gender	String?	Extracted target demographic (male, female, unisex, kids).
+season	String?	Extracted season (spring/summer, fall/winter, all-season).
+netto	String?	Net weight / garment base weight (e.g., 450g).
+brutto	String?	Gross weight including packaging/hangtags (e.g., 520g).
+brand_name	String?	Detected brand/designer name (e.g. Nike, Zara, Gucci).
+country_of_origin	String?	Country of manufacture parsed from care tags (e.g. Made in Portugal).
+size	String?	Normalized size specification (e.g. L, 32W x 34L, EU 42).
+color	String?	Detected dominant and secondary colors (e.g. Navy Blue / White).
+material	String?	Fabric composition (e.g. 100% Cotton, 80% Wool 20% Polyamide).
+original_price	String?	MSRP / Tag price including currency symbols (e.g. $129.00).
+*_conf (12 fields)	Float	Individual confidence ratings (
+ to 
+) for each field above.
+error_message	String?	Network or server error description if extraction failed.
+created_at	Long	Epoch millisecond timestamp for sorting.
+B. Final Daily Ledger Record (DailyLedgerEntity)
+Represents an approved, human-verified product record ready for warehouse management or CSV export:
+Column	CSV Header	Example Value	Notes
+apparel_id	apparel_id	BAR-849204	Primary Barcode ID
+parent_item_id	parent_item_id	BAR-700123 (or empty)	Links cloned duplicate items
+username	username	operator_01	Shift operator identity
+timestamp	timestamp	2026-08-24 14:30:15	Approval timestamp
+category	category	clothing	Normalized category
+sub_category	sub-category	jacket	Standardized subcategory
+gender	gender	unisex	Target demographic
+season	season	fall/winter	Seasonal grouping
+netto	netto	650g	Net weight
+brutto	brutto	710g	Gross weight
+brand_name	brand_name	Acne Studios	Brand name
+country_of_origin	country_of_origin	Italy	Origin country
+size	size	50 (L)	Garment size
+color	color	Charcoal Grey	Garment color
+material	material	100% Virgin Wool	Fabric composition
+original_price	original_price	€450.00	Retail price tag
+is_demo_record	record_type	REAL / DEMO	Explicit record segregation
+image_files	image_files	/data/.../IMG_BAR-849204_0.jpg;...	Local file paths list
+2. How Pictures Are Assigned to the Record Structure
+The application uses an Item-Centric Multi-Photo Binding Architecture:
+code
+Code
+[ Barcode Lock: apparel_id ]
+            │
+            ├── Photo 1: IMG_<apparel_id>_0.jpg (Brand / Main Tag)
+            ├── Photo 2: IMG_<apparel_id>_1.jpg (Care / Composition Label)
+            ├── Photo 3: IMG_<apparel_id>_2.jpg (Price / SKU Tag)
+            └── Photo N: IMG_<apparel_id>_N.jpg (Overall Garment / Detail)
+                        │
+                        ▼
+       [ ScanEntity.imageFiles = "path1;path2;path3..." ]
+                        │
+         ┌──────────────┴──────────────┐
+         ▼                             ▼
+ [ Uploaded to Server ]    [ Referenced in Review UI ]
+ Multi-part image list      Interactive swipe carousel
+ for Gemini Vision AI       displayed alongside fields
+Key Rules of Image Assignment:
+Deterministic File Naming:
+When photos are captured in CaptureScreen.kt, they are written directly to the app's secure internal storage directory (context.filesDir/scans/):
+Atomic Semicolon Delimitation:
+Multiple image paths for a single item are combined into a single string:
+Multimodal Batch Ingestion:
+When transmitting to the AI server, all image files in the list are attached as separate images multipart parts. Gemini Vision evaluates all images together in a single prompt context, allowing it to correlate information across different tags (e.g., brand from Image 1, material from Image 2, and price from Image 3).
+Cloned / Duplicate Items:
+When an item is duplicated using the Parent-Child Cloning workflow, the child record inherits the exact same image_files path string from the parent, saving storage space while keeping visual references intact.
+3. What the Middleware Server Is Expected to Do
+The companion middleware server acts as an authenticated gateway between Android mobile devices and Google Cloud / Gemini AI.
+Architecture Overview
+Key Responsibilities & API Endpoints
+Endpoint 1: Device Authentication Handshake
+Route: POST /api/auth/login
+Request Body (application/json):
+code
+JSON
+{
+  "password": "device_secure_password",
+  "userId": "operator_01"
+}
+Expected Middleware Response:
+code
+JSON
+{
+  "success": true,
+  "token": "jwt_session_token_here",
+  "message": "Authenticated successfully"
+}
+Responsibility: Authenticates warehouse operators, verifies device credentials, and returns a session JWT token.
+Endpoint 2: Multimodal Apparel Vision Extraction
+Route: POST /api/extract/apparel
+Headers: Authorization: Bearer <jwt_token>
+Request Format (multipart/form-data):
+apparel_id: String (e.g. BAR-849204)
+username: String (e.g. operator_01)
+images: File array (image/jpeg binary parts, 1 to 8 files)
+Middleware Execution Flow:
+Receives and buffers multipart image streams using multer.
+Converts image buffers to Gemini inline base64 image parts.
+Sends images to Gemini Vision with a strict system prompt instructing structured extraction.
+Returns the standardized JSON payload back to the Android client.
+Expected Middleware Response:
+code
+JSON
+{
+  "success": true,
+  "apparel_id": "BAR-849204",
+  "extraction": {
+    "category": "clothing",
+    "categoryConf": 0.98,
+    "subCategory": "jacket",
+    "subCategoryConf": 0.95,
+    "gender": "unisex",
+    "genderConf": 0.90,
+    "season": "fall/winter",
+    "seasonConf": 0.88,
+    "netto": "580g",
+    "nettoConf": 0.75,
+    "brutto": "640g",
+    "bruttoConf": 0.72,
+    "brandName": "Patagonia",
+    "brandNameConf": 0.99,
+    "countryOfOrigin": "Vietnam",
+    "countryOfOriginConf": 0.94,
+    "size": "L",
+    "sizeConf": 0.97,
+    "color": "Forest Green",
+    "colorConf": 0.92,
+    "material": "100% Recycled Polyester",
+    "materialConf": 0.96,
+    "originalPrice": "$199.00",
+    "originalPriceConf": 0.89
+  }
+}
+Endpoint 3: Server Health & Heartbeat
+Route: GET /api/health
+Expected Middleware Response:
+code
+JSON
+{
+  "status": "healthy",
+  "version": "1.0.0",
+  "geminiReady": true
+}
+Responsibility: Allows the Android app to perform fast 4-second connectivity checks upon startup and display immediate status in the Settings view.
