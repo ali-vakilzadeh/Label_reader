@@ -1,4 +1,4 @@
-# Label Reader - Private Repo for FitOut.AM co.
+# Label Reader - Private Repo for OutFit.AM co.
 
 ## Project Structure
 
