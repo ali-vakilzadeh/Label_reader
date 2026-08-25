@@ -1,0 +1,106 @@
+{
+  "project_metadata": {
+    "project_name": "Apparel Vision Processing Middleware Server",
+    "architecture_role": "Middleware Bridge between Mobile Clients and Gemini Vision API",
+    "target_stack": "Node.js (v20+ LTS), Express.js, TypeScript, Multer, JWT, @google/genai, node-cron",
+    "deployment_target": "Linux VPS (Ubuntu 24.04 LTS), Port 443 / HTTPS",
+    "concurrent_clients": 10
+  },
+  "security_and_auth": {
+    "api_key_storage": "GEMINI_API_KEY stored exclusively in server process.env",
+    "device_auth": {
+      "login_endpoint": "POST /api/v1/auth/login",
+      "credentials": {
+        "password": "validated against process.env.APP_MASTER_PASSWORD",
+        "username": "stored employee ID"
+      },
+      "token_spec": "JWT, 30 days expiration, Bearer scheme in Authorization header"
+    },
+    "protection": "express-rate-limit (60 requests/min per IP), Helmet security headers, CORS enabled"
+  },
+  "api_contract_endpoints": [
+    {
+      "method": "POST",
+      "path": "/api/v1/auth/login",
+      "request_body": {
+        "password": "string",
+        "username": "string"
+      },
+      "response_200": {
+        "status": "success",
+        "token": "string (JWT)",
+        "expires_in": "30d"
+      }
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/vision/extract",
+      "headers": {
+        "Authorization": "Bearer <JWT_TOKEN>"
+      },
+      "request_type": "multipart/form-data",
+      "form_fields": {
+        "apparel_id": "string (Required - physical barcode scanned via client ML Kit)",
+        "username": "string (Required - employee ID)",
+        "key_photo_index": "integer (Required - zero-based index 0-7 of main product photo)",
+        "cloned_from": "string (Optional - parent barcode if duplicating)",
+        "images": "array of binary files (Required if cloned_from is null, max 8 JPEG/PNG images)"
+      },
+      "response_200": {
+        "status": "success",
+        "apparel_id": "890123456789",
+        "cloned_from": null,
+        "timestamp": "2026-08-25T14:36:09Z",
+        "catalog_image_url": "https://vps-domain.com/catalog/IMG_890123456789.jpg",
+        "data": {
+          "brand_name": { "value": "Nike", "confidence": 0.95 },
+          "country_of_origin": { "value": "Vietnam", "confidence": 0.88 },
+          "size": { "value": "XL", "confidence": 0.90 },
+          "color": { "value": "black", "confidence": 0.92 },
+          "material": { "value": "100% Polyester", "confidence": 0.85 },
+          "original_price": { "value": "$45.00", "confidence": 0.99 },
+          "netto": { "value": "240g", "confidence": 0.80 },
+          "brutto": { "value": "290g", "confidence": 0.80 },
+          "category": { "value": "clothing", "confidence": 0.90 },
+          "sub_category": { "value": "pants", "confidence": 0.85 },
+          "gender": { "value": "unisex", "confidence": 0.75 },
+          "season": { "value": "all-seasons", "confidence": 0.70 }
+        }
+      }
+    },
+    {
+      "method": "GET",
+      "path": "/health",
+      "response_200": {
+        "status": "ok",
+        "uptime_seconds": 142050
+      }
+    }
+  ],
+  "business_logic_rules": {
+    "cloning_workflow": "If cloned_from is present in request body, skip Gemini Vision API processing entirely. Query local server database for parent_apparel_id data, rebind under new apparel_id, and return immediately.",
+    "weight_processing": "Gemini extracts an array of weights from scale display photos. If 2 weights detected: assign MAX to brutto and MIN to netto. If 1 weight detected: netto = brutto = detected_value. If 0 weights: netto = brutto = '' with 0.0 confidence.",
+    "deterministic_url_pregeneration": "Do NOT wait for image generation to return a URL. The server constructs 'https://<SERVER_HOST>/catalog/IMG_<apparel_id>.jpg' synchronously during /api/v1/vision/extract so mobile clients and CSV exports instantly receive a permanent URL.",
+    "overnight_rendering_cron": "A node-cron job triggers at 20:00 daily. It iterates over pending records, takes the binary image corresponding to key_photo_index, sends it to Gemini image generation/editing model (e.g. Imagen/Gemini Vision), outputs a studio-refreshed product shot, and writes it directly to the static public directory (/public/catalog/IMG_<apparel_id>.jpg)."
+  },
+  "gemini_sdk_configuration": {
+    "sdk": "@google/genai",
+    "model": "gemini-2.5-flash",
+    "system_instruction": "Analyze apparel label and scale display images. Extract brand_name, country_of_origin, size, material, and original_price. Read weights from scale displays into an array. Infer dominant color from [black, white, blue, red, orange, yellow, brown, green, gray], category from [shoe, clothing, accessories], sub_category from [shirt, pants, all-body, coat, jacket, pullover, scarf, shorts, underwear, cap, hat, shawl, sunglasses, others], gender from [male, female, unisex, kids-boy, kids-girl, newborn], and season from [spring, summer, fall, winter, all-seasons]. RULE: Return a confidence score between 0.0 and 1.0 for EVERY field. If a field is missing, guess ONLY if confidence > 0.50. Otherwise return empty string with 0.0 confidence.",
+    "structured_output_schema": "Enforced via responseMimeType: 'application/json' and Type.OBJECT definition matching the data payload contract."
+  },
+  "local_server_database": {
+    "engine": "SQLite / Better-SQLite3 or PostgreSQL",
+    "table": "server_scans",
+    "fields": [
+      "apparel_id (PK)",
+      "cloned_from",
+      "username",
+      "timestamp",
+      "raw_json_data",
+      "key_photo_path",
+      "catalog_image_url",
+      "rendering_status (PENDING / COMPLETED / FAILED)"
+    ]
+  }
+}
