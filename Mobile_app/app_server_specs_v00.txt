@@ -1,0 +1,197 @@
+Here is the detailed technical report explaining the record structures, how pictures are linked and organized, and the exact responsibilities and API contracts of the middleware server:
+Technical Specification: Records, Image Assignment & Middleware Pipeline
+
+1. Complete Record Structures (Data Schema)
+
+The application handles records across three primary phases:
+
+1-Intake / Unverified Scan Stage (ScanEntity in Room SQLite)
+2-AI Extraction Payload (VisionExtractionResponse / DTO)
+3-Approved Production Ledger (DailyLedgerEntity in Room SQLite & CSV Export)
+
+A. Intake Scan Entity (ScanEntity)
+
+Stored in the local SQLite database as soon as photos are taken for a barcode, before/during AI processing:
+
+Field Name	Type	Description
+apparel_id (PK)	String	Barcode identifier (e.g., BAR-849204) or Demo ID (demo_0001).
+parent_item_id	String?	Barcode of the parent garment if cloned; null for original scans.
+username	String	Operator/User ID logged into the device (e.g., operator_01).
+timestamp	String	Formatted creation timestamp (YYYY-MM-DD HH:MM:SS).
+image_files	String	Semicolon-delimited list of absolute local image paths on disk.
+status	Int	Queue state: 0 = Pending AI Vision, 1 = Extracted / In Review, 2 = Verified / Added to Ledger, 3 = Failed.
+is_demo_record	Boolean	true if generated under Demo Mode; false for genuine scans.
+category	String?	Extracted top-level taxonomy (e.g. clothing, shoe, accessories).
+sub_category	String?	Extracted garment type (e.g. jacket, dress, t-shirt, sneakers).
+gender	String	Extracted target demographic (male, female, unisex, kids).
+season	String	Extracted season (spring/summer, fall/winter, all-season).
+netto	String	Net weight / garment base weight (e.g., 450g).
+brutto	String	Gross weight including packaging/hangtags (e.g., 520g).
+brand_name	String	Detected brand/designer name (e.g. Nike, Zara, Gucci).
+country_of_origin	String	Country of manufacture parsed from care tags (e.g. Made in Portugal).
+size	String	Normalized size specification (e.g. L, 32W x 34L, EU 42).
+color	String	Detected dominant and secondary colors (e.g. Navy Blue / White).
+material	String?	Fabric composition (e.g. 100% Cotton, 80% Wool 20% Polyamide).
+original_price	String	MSRP / Tag price including currency symbols (e.g. $129.00).
+*_conf (12 fields)	Float	Individual confidence ratings ( to ) for each field above.
+error_message	String	Network or server error description if extraction failed.
+created_at	Long	Epoch millisecond timestamp for sorting.
+
+
+B. Final Daily Ledger Record (DailyLedgerEntity)
+
+Represents an approved, human-verified product record ready for warehouse management or CSV export:
+
+Column	CSV Header	Example Value	Notes
+apparel_id	apparel_id	BAR-849204	Primary Barcode ID
+parent_item_id	parent_item_id	BAR-700123 (or empty)	Links cloned duplicate items
+username	username	operator_01	Shift operator identity
+timestamp	timestamp	2026-08-24 14:30:15	Approval timestamp
+category	category	clothing	Normalized category
+sub_category	sub-category	jacket	Standardized subcategory
+gender	gender	unisex	Target demographic
+season	season	fall/winter	Seasonal grouping
+netto	netto	650g	Net weight
+brutto	brutto	710g	Gross weight
+brand_name	brand_name	Acne Studios	Brand name
+country_of_origin	country_of_origin	Italy	Origin country
+size	size	50 (L)	Garment size
+color	color	Charcoal Grey	Garment color
+material	material	100% Virgin Wool	Fabric composition
+original_price	original_price	€450.00	Retail price tag
+is_demo_record	record_type	REAL / DEMO	Explicit record segregation
+image_files	image_files	/data/.../IMG_BAR-849204_0.jpg;...	Local file paths list
+
+
+2. How Pictures Are Assigned to the Record Structure
+
+The application uses an Item-Centric Multi-Photo Binding Architecture:
+```
+[ Barcode Lock: apparel_id ]
+            │
+            ├── Photo 1: IMG_<apparel_id>_0.jpg (Brand / Main Tag)
+            ├── Photo 2: IMG_<apparel_id>_1.jpg (Care / Composition Label)
+            ├── Photo 3: IMG_<apparel_id>_2.jpg (Price / SKU Tag)
+            └── Photo N: IMG_<apparel_id>_N.jpg (Overall Garment / Detail)
+                        │
+                        ▼
+       [ ScanEntity.imageFiles = "path1;path2;path3..." ]
+                        │
+         ┌──────────────┴──────────────┐
+         ▼                             ▼
+ [ Uploaded to Server ]    [ Referenced in Review UI ]
+ Multi-part image list      Interactive swipe carousel
+ for Gemini Vision AI       displayed alongside fields
+```
+
+
+Key Rules of Image Assignment:
+
+1-Deterministic File Naming:
+When photos are captured in CaptureScreen.kt, they are written directly to the app's secure internal storage directory (context.filesDir/scans/):
+
+2-Atomic Semicolon Delimitation:
+Multiple image paths for a single item are combined into a single string:
+
+3-Multimodal Batch Ingestion:
+When transmitting to the AI server, all image files in the list are attached as separate images multipart parts. Gemini Vision evaluates all images together in a single prompt context, allowing it to correlate information across different tags (e.g., brand from Image 1, material from Image 2, and price from Image 3).
+
+4-Cloned / Duplicate Items:
+When an item is duplicated using the Parent-Child Cloning workflow, the child record inherits the exact same image_files path string from the parent, saving storage space while keeping visual references intact.
+
+3. What the Middleware Server Is Expected to Do
+
+The companion middleware server acts as an authenticated gateway between Android mobile devices and Google Cloud / Gemini AI.
+
+Architecture Overview
+
+Key Responsibilities & API Endpoints
+
+Endpoint 1: Device Authentication Handshake
+Route: POST /api/auth/login
+Request Body (application/json):
+
+```JSON
+
+{
+  "password": "device_secure_password",
+  "userId": "operator_01"
+}
+```
+
+Expected Middleware Response:
+```JSON
+
+{
+  "success": true,
+  "token": "jwt_session_token_here",
+  "message": "Authenticated successfully"
+}
+```
+
+Responsibility: Authenticates warehouse operators, verifies device credentials, and returns a session JWT token.
+
+Endpoint 2: Multimodal Apparel Vision Extraction
+
+Route: POST /api/extract/apparel
+Headers: Authorization: Bearer <jwt_token>
+Request Format (multipart/form-data):
+apparel_id: String (e.g. BAR-849204)
+username: String (e.g. operator_01)
+images: File array (image/jpeg binary parts, 1 to 8 files)
+Middleware Execution Flow:
+Receives and buffers multipart image streams using multer.
+Converts image buffers to Gemini inline base64 image parts.
+Sends images to Gemini Vision with a strict system prompt instructing structured extraction.
+Returns the standardized JSON payload back to the Android client.
+
+Expected Middleware Response:
+
+```JSON
+{
+  "success": true,
+  "apparel_id": "BAR-849204",
+  "extraction": {
+    "category": "clothing",
+    "categoryConf": 0.98,
+    "subCategory": "jacket",
+    "subCategoryConf": 0.95,
+    "gender": "unisex",
+    "genderConf": 0.90,
+    "season": "fall/winter",
+    "seasonConf": 0.88,
+    "netto": "580g",
+    "nettoConf": 0.75,
+    "brutto": "640g",
+    "bruttoConf": 0.72,
+    "brandName": "Patagonia",
+    "brandNameConf": 0.99,
+    "countryOfOrigin": "Vietnam",
+    "countryOfOriginConf": 0.94,
+    "size": "L",
+    "sizeConf": 0.97,
+    "color": "Forest Green",
+    "colorConf": 0.92,
+    "material": "100% Recycled Polyester",
+    "materialConf": 0.96,
+    "originalPrice": "$199.00",
+    "originalPriceConf": 0.89
+  }
+}
+```
+
+Endpoint 3: Server Health & Heartbeat
+
+Route: GET /api/health
+
+Expected Middleware Response:
+
+```JSON
+{
+  "status": "healthy",
+  "version": "1.0.0",
+  "geminiReady": true
+}
+```
+
+Responsibility: Allows the Android app to perform fast 4-second connectivity checks upon startup and display immediate status in the Settings view.
