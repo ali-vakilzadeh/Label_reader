@@ -7,7 +7,7 @@
 Android app ──► Middleware (Express)  ── bridge only ──► Gemini
                      │
                      ├─ returns extraction to app (app stores confirmed data locally)
-                     └─ silently tees LOW-CONFIDENCE extractions + photos ──► training.sqlite (internal)
+                     └─ LOW-CONFIDENCE extractions + photos ──► training.sqlite (future training extention - limit to 10'000 records)
 
 End of day:  app ► native share ► CSV file ► received manually ► uploaded in dashboard UI
                                                     │
@@ -33,8 +33,8 @@ Key differences from v1.0:
 |---|---|---|
 | M1 | Auth | `POST /api/v1/auth/login` per-operator credentials → JWT (30d). |
 | M2 | Health | `GET /api/v1/health` as specified. |
-| M3 | Vision bridge | `POST /api/v1/vision/extract`: multipart images (1–6 per apparel; align spec's "8" down or proposal up — decide once) + apparel_id + username → Gemini structured output → response to app. Stateless for confirmed data. |
-| M4 | Confidence tee (internal) | After each extraction, if ANY field confidence < threshold (configurable, default 0.8): write photos + full raw extraction + apparel_id + username + timestamp to `training.sqlite`. Fully synchronous-safe (write-behind queue so the app response is never delayed). |
+| M3 | Vision bridge | `POST /api/v1/vision/extract`: multipart images (1–8 per apparel) + apparel_id + username → Gemini structured output → response to app. Stateless for confirmed data. |
+| M4 | Confidence | After each extraction, if ANY field confidence < threshold (configurable, default 0.8): write photos + full raw extraction + apparel_id + username + timestamp to `training.sqlite`. Fully synchronous-safe (write-behind queue so the app response is never delayed). |
 | M5 | Cost log | Per-request Gemini cost estimate appended to a log table (monthly ops answer for the client). |
 | M6 | Rate/size guards | Max image size, max images per call, per-device daily cap. |
 
