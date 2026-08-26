@@ -87,9 +87,10 @@ export function translateMaterial(
   const whole = toArmenian(trimmed);
   if (whole) return { text: whole, missing };
 
-  // Split on commas, slashes and percentage boundaries, keeping the numbers.
+  // Split on separators, and before each "NN%" token so run-on compositions
+  // ("38% Cotton 27% Wool") break into one segment per fibre.
   const segments = trimmed
-    .split(/[,;/]+|(?<=%)\s+(?=\d)/)
+    .split(/[,;/]+|\s+(?=\d+(?:[.,]\d+)?\s*%)/)
     .map((segment) => segment.trim())
     .filter(Boolean);
 

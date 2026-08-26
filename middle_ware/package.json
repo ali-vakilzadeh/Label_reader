@@ -13,7 +13,9 @@
     "dev": "tsx watch src/index.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "convert:translations": "tsx scripts/convertTranslations.ts",
-    "render:now": "tsx scripts/runRenderJob.ts"
+    "render:now": "tsx scripts/runRenderJob.ts",
+    "test": "tsx tests/smoke.ts",
+    "test:live": "tsx tests/liveExtract.ts"
   },
   "dependencies": {
     "@google/genai": "^1.28.0",

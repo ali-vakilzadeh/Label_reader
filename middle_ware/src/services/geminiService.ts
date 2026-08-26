@@ -23,6 +23,92 @@ export function isGeminiReady(): boolean {
   return Boolean(env.geminiApiKey);
 }
 
+/** HTTP statuses worth retrying: rate limits and transient backend faults. */
+const RETRYABLE_STATUS = new Set([408, 429, 500, 502, 503, 504]);
+
+function statusOf(error: unknown): number | null {
+  if (!error || typeof error !== 'object') return null;
+  const candidate = error as { status?: unknown; code?: unknown; message?: unknown };
+  if (typeof candidate.status === 'number') return candidate.status;
+  if (typeof candidate.code === 'number') return candidate.code;
+  // The SDK stringifies the API error envelope into `message`.
+  if (typeof candidate.message === 'string') {
+    try {
+      const parsed = JSON.parse(candidate.message) as { error?: { code?: number } };
+      if (typeof parsed.error?.code === 'number') return parsed.error.code;
+    } catch {
+      /* not a JSON envelope */
+    }
+  }
+  return null;
+}
+
+/** Network-level failures ("fetch failed") are retryable too. */
+function isRetryable(error: unknown): boolean {
+  const status = statusOf(error);
+  if (status !== null) return RETRYABLE_STATUS.has(status);
+  return error instanceof TypeError || /fetch failed|ECONNRESET|ETIMEDOUT|socket hang up/i.test(
+    error instanceof Error ? error.message : String(error),
+  );
+}
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
+ * Runs `attempt` against the primary model, retrying transient failures with
+ * exponential backoff plus jitter, then falls back to GEMINI_FALLBACK_MODEL for
+ * one final try. Non-retryable errors (bad key, malformed request) fail fast.
+ */
+export async function withModelRetry<T>(
+  attempt: (model: string) => Promise<T>,
+  primaryModel: string,
+  label: string,
+): Promise<T> {
+  const attempts = Math.max(1, env.geminiMaxAttempts);
+  let lastError: unknown;
+
+  for (let i = 0; i < attempts; i += 1) {
+    try {
+      return await attempt(primaryModel);
+    } catch (error) {
+      lastError = error;
+      if (!isRetryable(error) || i === attempts - 1) break;
+      // 500ms, 1s, 2s... plus up to 250ms of jitter to desynchronise devices.
+      const backoff = 500 * 2 ** i + Math.floor(Math.random() * 250);
+      logger.warn(
+        `${label}: ${describe(error)} on ${primaryModel} (attempt ${i + 1}/${attempts}); ` +
+          `retrying in ${backoff} ms.`,
+      );
+      await sleep(backoff);
+    }
+  }
+
+  const fallback = env.geminiFallbackModel;
+  if (fallback && fallback !== primaryModel && isRetryable(lastError)) {
+    logger.warn(`${label}: falling back to ${fallback} after ${attempts} failed attempt(s).`);
+    try {
+      return await attempt(fallback);
+    } catch (error) {
+      logger.error(`${label}: fallback model ${fallback} also failed.`, error);
+      throw error;
+    }
+  }
+
+  throw lastError;
+}
+
+function describe(error: unknown): string {
+  const status = statusOf(error);
+  const message = error instanceof Error ? error.message : String(error);
+  try {
+    const parsed = JSON.parse(message) as { error?: { status?: string } };
+    if (parsed.error?.status) return `${status ?? '?'} ${parsed.error.status}`;
+  } catch {
+    /* plain message */
+  }
+  return status !== null ? `HTTP ${status}` : message.slice(0, 80);
+}
+
 export const SYSTEM_INSTRUCTION = [
   'Analyze apparel label and scale display images.',
   'Extract brand_name, country_of_origin, size, material, and original_price.',
@@ -105,8 +191,10 @@ export async function extractApparelData(
   }
 
   const started = Date.now();
-  const response = await getClient().models.generateContent({
-    model: env.geminiVisionModel,
+  const response = await withModelRetry(
+    (model) =>
+      getClient().models.generateContent({
+    model,
     contents: [
       {
         role: 'user',
@@ -128,7 +216,10 @@ export async function extractApparelData(
       responseSchema: EXTRACTION_SCHEMA,
       temperature: 0,
     },
-  });
+      }),
+    env.geminiVisionModel,
+    'Vision extraction',
+  );
 
   const text = response.text;
   if (!text) {
@@ -152,18 +243,23 @@ export async function renderStudioImage(
   image: InlineImage,
   prompt: string,
 ): Promise<{ buffer: Buffer; mimeType: string } | null> {
-  const response = await getClient().models.generateContent({
-    model: env.geminiImageModel,
-    contents: [
-      {
-        role: 'user',
-        parts: [
-          { inlineData: { mimeType: image.mimeType, data: image.data } },
-          { text: prompt },
+  const response = await withModelRetry(
+    (model) =>
+      getClient().models.generateContent({
+        model,
+        contents: [
+          {
+            role: 'user',
+            parts: [
+              { inlineData: { mimeType: image.mimeType, data: image.data } },
+              { text: prompt },
+            ],
+          },
         ],
-      },
-    ],
-  });
+      }),
+    env.geminiImageModel,
+    'Studio render',
+  );
 
   const parts = response.candidates?.[0]?.content?.parts ?? [];
   for (const part of parts) {

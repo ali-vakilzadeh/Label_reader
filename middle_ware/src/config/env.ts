@@ -69,8 +69,12 @@ export const env = {
 
   // --- Gemini -----------------------------------------------------------
   geminiApiKey: process.env.GEMINI_API_KEY ?? '',
-  geminiVisionModel: optional('GEMINI_VISION_MODEL', 'gemini-2.5-flash'),
-  geminiImageModel: optional('GEMINI_IMAGE_MODEL', 'gemini-2.5-flash-image'),
+  geminiVisionModel: optional('GEMINI_VISION_MODEL', 'gemini-3.7-flash'),
+  geminiImageModel: optional('GEMINI_IMAGE_MODEL', 'gemini-3.1-flash-image'),
+  /** Total attempts against the primary model before falling back. */
+  geminiMaxAttempts: numeric('GEMINI_MAX_ATTEMPTS', 3),
+  /** Optional second model tried once after the primary exhausts its retries. */
+  geminiFallbackModel: optional('GEMINI_FALLBACK_MODEL', ''),
 
   // --- Storage ----------------------------------------------------------
   dataDir: resolveDir(optional('DATA_DIR', 'data')),
