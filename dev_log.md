@@ -19,13 +19,13 @@
         
         [☑️] Demo mode  (10%)
         
-        [🔃] **Middleware connectivity + AI Vision test  (30%)**
+        [🔃] Middleware connectivity + AI Vision test  (30%)
         
         [  ] Developer stage debugging  (10%)
         
         [  ] End user stage debugging   (20%)
         
-    [🔃] **Middleware**
+    [🔃] Middleware
     
         [🔃] Proof of concept  (10%)
         
