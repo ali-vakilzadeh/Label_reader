@@ -59,6 +59,9 @@ const insertStmt = operationalDb.prepare(`
     image_paths       = excluded.image_paths,
     catalog_image_url = excluded.catalog_image_url,
     rendering_status  = excluded.rendering_status,
+    -- A re-scan supersedes the old photos, so it earns a fresh render budget.
+    render_attempts   = 0,
+    render_error      = NULL,
     updated_at        = excluded.updated_at
 `);
 
@@ -66,12 +69,20 @@ const selectByIdStmt = operationalDb.prepare(
   'SELECT * FROM server_scans WHERE apparel_id = ?',
 );
 
+/**
+ * Render queue. Includes rows that failed on an earlier night but still have
+ * attempts left, so a transient outage self-heals on the next run. SKIPPED rows
+ * (no key photo on file) are never retried — nothing would change.
+ */
 const selectPendingStmt = operationalDb.prepare(`
   SELECT * FROM server_scans
-  WHERE rendering_status = 'PENDING'
-    AND key_photo_path IS NOT NULL
+  WHERE key_photo_path IS NOT NULL
+    AND (
+      rendering_status = 'PENDING'
+      OR (rendering_status = 'FAILED' AND render_attempts < @max_attempts)
+    )
   ORDER BY created_at ASC
-  LIMIT ?
+  LIMIT @limit
 `);
 
 const updateRenderStatusStmt = operationalDb.prepare(`
@@ -117,8 +128,11 @@ export function getScan(apparelId: string): ServerScanRow | undefined {
   return selectByIdStmt.get(apparelId) as ServerScanRow | undefined;
 }
 
-export function getPendingRenders(limit: number): ServerScanRow[] {
-  return selectPendingStmt.all(limit) as ServerScanRow[];
+export function getPendingRenders(
+  limit: number,
+  maxAttempts = env.renderMaxAttempts,
+): ServerScanRow[] {
+  return selectPendingStmt.all({ limit, max_attempts: maxAttempts }) as ServerScanRow[];
 }
 
 export function setRenderingStatus(

@@ -102,6 +102,8 @@ export const env = {
   renderCronTimezone: optional('RENDER_CRON_TIMEZONE', 'Asia/Yerevan'),
   renderCronEnabled: optional('RENDER_CRON_ENABLED', 'true') === 'true',
   renderBatchSize: numeric('RENDER_BATCH_SIZE', 200),
+  /** A failed render is retried on later nights until this many attempts. */
+  renderMaxAttempts: numeric('RENDER_MAX_ATTEMPTS', 3),
 } as const;
 
 export const isProduction = env.nodeEnv === 'production';
