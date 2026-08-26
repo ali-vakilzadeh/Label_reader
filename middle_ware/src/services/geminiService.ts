@@ -2,6 +2,7 @@ import { GoogleGenAI, Type } from '@google/genai';
 import type { Schema } from '@google/genai';
 import { env } from '../config/env';
 import { logger } from '../utils/logger';
+import { TAXONOMY_KEYS } from '../utils/fuzzyMatcher';
 import type { GeminiRawExtraction } from '../types';
 
 /**
@@ -109,15 +110,22 @@ function describe(error: unknown): string {
   return status !== null ? `HTTP ${status}` : message.slice(0, 80);
 }
 
+/**
+ * The allowed-value lists are read from the same taxonomy files the fuzzy
+ * matcher indexes, so the prompt and the normaliser can never disagree about
+ * what a valid key is. Growing sub_category from 14 to 253 options updates this
+ * instruction automatically.
+ */
 export const SYSTEM_INSTRUCTION = [
   'Analyze apparel label and scale display images.',
   'Extract brand_name, country_of_origin, size, material, and original_price.',
   'Read weights from scale displays into an array.',
-  'Infer dominant color from [black, white, blue, red, orange, yellow, brown, green, gray],',
-  'category from [shoe, clothing, accessories],',
-  'sub_category from [shirt, pants, all-body, coat, jacket, pullover, scarf, shorts, underwear, cap, hat, shawl, sunglasses, others],',
-  'gender from [male, female, unisex, kids-boy, kids-girl, newborn],',
-  'and season from [spring, summer, fall, winter, all-seasons].',
+  `Infer dominant color from [${TAXONOMY_KEYS.color}],`,
+  `category from [${TAXONOMY_KEYS.category}],`,
+  `sub_category from [${TAXONOMY_KEYS.sub_category}],`,
+  `gender from [${TAXONOMY_KEYS.gender}],`,
+  `and season from [${TAXONOMY_KEYS.season}].`,
+  'Choose the single closest option from each list; do not invent new values.',
   'RULE: Return a confidence score between 0.0 and 1.0 for EVERY field.',
   'If a field is missing, guess ONLY if confidence > 0.50.',
   'Otherwise return empty string with 0.0 confidence.',
@@ -144,13 +152,13 @@ export const EXTRACTION_SCHEMA: Schema = {
     brand_name: confidenceField('Brand or designer name printed on the label.'),
     country_of_origin: confidenceField('Country of manufacture, e.g. "Vietnam".'),
     size: confidenceField('Size as printed, e.g. "XL", "EU 42", "32W x 34L".'),
-    color: confidenceField('Dominant color, one of the allowed color keys.'),
+    color: confidenceField(`Dominant color, one of: ${TAXONOMY_KEYS.color}.`),
     material: confidenceField('Fabric composition, e.g. "100% Polyester".'),
     original_price: confidenceField('Retail price including currency symbol.'),
-    category: confidenceField('One of: shoe, clothing, accessories.'),
-    sub_category: confidenceField('Garment type key.'),
-    gender: confidenceField('One of: male, female, unisex, kids-boy, kids-girl, newborn.'),
-    season: confidenceField('One of: spring, summer, fall, winter, all-seasons.'),
+    category: confidenceField(`One of: ${TAXONOMY_KEYS.category}.`),
+    sub_category: confidenceField(`One of: ${TAXONOMY_KEYS.sub_category}.`),
+    gender: confidenceField(`One of: ${TAXONOMY_KEYS.gender}.`),
+    season: confidenceField(`One of: ${TAXONOMY_KEYS.season}.`),
     weights: {
       type: Type.ARRAY,
       description:

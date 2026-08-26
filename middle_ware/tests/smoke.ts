@@ -21,6 +21,7 @@ import {
   translateMaterial,
 } from '../src/services/exportService';
 import { resolveWeights } from '../src/utils/weights';
+import { SYSTEM_INSTRUCTION, EXTRACTION_SCHEMA } from '../src/services/geminiService';
 import type { GeminiRawExtraction } from '../src/types';
 
 let passed = 0;
@@ -263,6 +264,25 @@ async function main(): Promise<void> {
   check('color "Navy Blue" -> blue', normalized.color.value === 'blue');
   check('brand kept verbatim', normalized.brand_name.value === 'Nike');
   check('confidence preserved through snapping', normalized.color.confidence === 0.92);
+
+  section('Prompt / taxonomy coupling');
+  const subCategoryKeys = (
+    require('../src/data/taxonomy/subCategories.json') as { key: string }[]
+  ).map((entry) => entry.key);
+  check(
+    'system instruction lists every sub_category key',
+    subCategoryKeys.every((key) => SYSTEM_INSTRUCTION.includes(key)),
+    subCategoryKeys.filter((key) => !SYSTEM_INSTRUCTION.includes(key)),
+  );
+  check(
+    'response schema lists every sub_category key',
+    subCategoryKeys.every((key) =>
+      String(
+        (EXTRACTION_SCHEMA as any).properties.sub_category.properties.value.description,
+      ).includes(key),
+    ),
+    'schema description drifted from the taxonomy',
+  );
 
   section('Confidence screening');
   const high = screenConfidence(normalizeExtraction(sampleGemini()));

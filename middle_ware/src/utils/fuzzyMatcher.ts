@@ -155,6 +155,19 @@ export const colorIndex = new FuzzyIndex(requireEnum('color'), 'color');
 export const genderIndex = new FuzzyIndex(requireEnum('gender'), 'gender');
 export const seasonIndex = new FuzzyIndex(requireEnum('season'), 'season');
 
+/**
+ * Comma-separated canonical keys per field, for building the Gemini system
+ * instruction and response schema. Sharing this with the matcher guarantees the
+ * prompt can never offer a value the normaliser does not recognise.
+ */
+export const TAXONOMY_KEYS = {
+  category: requireEnum('category').map((entry) => entry.key).join(', '),
+  color: requireEnum('color').map((entry) => entry.key).join(', '),
+  gender: requireEnum('gender').map((entry) => entry.key).join(', '),
+  season: requireEnum('season').map((entry) => entry.key).join(', '),
+  sub_category: (subCategoriesData as TaxonomyEntry[]).map((entry) => entry.key).join(', '),
+} as const;
+
 /** Fields that get snapped to a canonical key, and the index that does it. */
 export const FIELD_INDEXES: Record<string, FuzzyIndex> = {
   sub_category: subCategoryIndex,
