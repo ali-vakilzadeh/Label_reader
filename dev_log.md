@@ -3,33 +3,35 @@
 ## Project Completion check list
 
 ```
-[ok] Primary Client Session to Review Problem and Operational Requirements.
+[☑️] Primary Client Session to Review Problem and Operational Requirements.
 
-[ok] Project overall scope, architecture and specification
+[☑️] Project overall scope, architecture and specification
 
-[>>] Technical Specification + Process Workflow
+[🔃] Technical Specification + Process Workflow
 
-    [>>] Android APP
+[🔃] _Main Project Components_
+
+    [>>] _Android APP_
     
-        [ok] Proof of concept  (10%)
+        [☑️] Proof of concept  (10%)
         
-        [ok] prototype  (20%)
+        [☑️] prototype  (20%)
         
-        [ok] Demo mode  (10%)
+        [☑️] Demo mode  (10%)
         
-        [>>] Middleware connectivity + AI Vision test  (30%)
+        [🔃] **Middleware connectivity + AI Vision test  (30%)**
         
         [  ] Developer stage debugging  (10%)
         
         [  ] End user stage debugging   (20%)
         
-    [>>] Middleware
+    [🔃] **Middleware**
     
-        [>>] Proof of concept  (10%)
+        [🔃] Proof of concept  (10%)
         
-        [>>] prototype  (20%)
+        [🔃] prototype  (20%)
         
-        [>>] Demo mode  (10%)
+        [🔃] Demo mode  (10%)
         
         [  ] Middleware connectivity + AI Vision test  (30%)
         
