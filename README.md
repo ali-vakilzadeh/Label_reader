@@ -23,6 +23,8 @@ To see system architecture see: [Label Reader Technical Scope](/docs/Label_Reade
 
 To see mobile app architecture see: [Mobile App Architecture](/Mobile_App/architecture.md)
 
+To see the APP-Middleware finalized API-Protocol see: [API Contract](/middle_ware/api_contract.md)
+
 ## Project Status
 
 Project is currently under active development. See the progress [daily log to and completion checklist](/dev_log.md).
@@ -41,13 +43,15 @@ This app is customized to match FitOut.AM requirements as follows:
 - Export daily results using native android sharing
 - Retain all database in hidden cache to future reference
 
-Requirements:
+### Requirements:
+
 - Mobile Device with Android 8.0 or later
 - Back camera - 10 Mega pixel or better + Auto/Manual Flash or Torch
 - Mobile or Wifi Internet connectivity
 - 2 GB Free Storage on Mobile Device (local or added SD Card)
 
-Usage:
+### Usage:
+
 - Ask your admin for server API address, username and pass (user can start without a connection, but AI vision & results will not work until a valid server connection)
 - Download and Install .apk application on your mobile device.
 - (First use only) Tap on Setting page (button-right of the app screen) > Input server address, username and password > save settings
