@@ -51,7 +51,7 @@ Key differences from v1.0:
 | T5 | Export | CLI script: dump matched triples to a dataset folder (images + JSONL) for future fine-tuning experiments. No UI. |
 | T6 | Isolation | Separate file path, separate DB user-less SQLite file, no dashboard route touches it; excluded from client-facing backups; included in developer-only backup. |
 
-> **Contract note (recommended, non-technical):** the earlier three-option proposal stated "your data remains your property." Retaining label photos and extraction records for model development without a covering clause contradicts that and creates avoidable legal exposure. One sentence in the license terms resolves it — e.g., *"The Developer may retain technical processing data (images and extraction results) for quality assurance and improvement of the extraction technology."* This discloses without itemizing, keeps the future fine-tuning asset legitimate, and costs the client nothing — which is exactly why they'll sign it.
+
 
 ## 3 — Dashboard functional plan (revised F-list)
 
