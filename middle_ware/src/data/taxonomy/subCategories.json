@@ -1,0 +1,16 @@
+[
+  { "key": "shirt",      "aliases": ["t-shirt", "tee", "tshirt", "blouse", "polo", "top", "tank top", "长袖", "shirts"] },
+  { "key": "pants",      "aliases": ["trousers", "jeans", "denim", "chinos", "leggings", "joggers", "sweatpants", "slacks"] },
+  { "key": "all-body",   "aliases": ["dress", "jumpsuit", "overall", "romper", "bodysuit", "gown", "onesie", "playsuit"] },
+  { "key": "coat",       "aliases": ["overcoat", "trench", "trench coat", "parka", "raincoat", "mac", "duffle coat"] },
+  { "key": "jacket",     "aliases": ["blazer", "bomber", "windbreaker", "anorak", "gilet", "vest", "puffer", "cardigan jacket"] },
+  { "key": "pullover",   "aliases": ["sweater", "jumper", "hoodie", "sweatshirt", "knitwear", "cardigan", "fleece"] },
+  { "key": "scarf",      "aliases": ["neckerchief", "bandana", "snood", "muffler", "neck warmer"] },
+  { "key": "shorts",     "aliases": ["bermuda", "swim shorts", "boardshorts", "hotpants", "cargo shorts"] },
+  { "key": "underwear",  "aliases": ["briefs", "boxers", "panties", "bra", "lingerie", "socks", "tights", "stockings", "undershirt"] },
+  { "key": "cap",        "aliases": ["baseball cap", "snapback", "beanie", "flat cap", "visor"] },
+  { "key": "hat",        "aliases": ["fedora", "sun hat", "bucket hat", "beret", "cowboy hat", "panama"] },
+  { "key": "shawl",      "aliases": ["wrap", "pashmina", "stole", "poncho", "cape"] },
+  { "key": "sunglasses", "aliases": ["shades", "eyewear", "glasses", "spectacles"] },
+  { "key": "others",     "aliases": ["misc", "miscellaneous", "accessory", "unknown", "other", "belt", "bag", "shoe", "sneakers", "boots", "sandals"] }
+]

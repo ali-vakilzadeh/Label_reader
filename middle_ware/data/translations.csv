@@ -1,0 +1,141 @@
+english,armenian,domain
+shoe,կոշիկ,category
+clothing,հագուստ,category
+accessories,պարագաներ,category
+shirt,վերնաշապիկ,sub_category
+pants,տաբատ,sub_category
+all-body,ամբողջական հագուստ,sub_category
+coat,վերարկու,sub_category
+jacket,բաճկոն,sub_category
+pullover,սվիտեր,sub_category
+scarf,շարֆ,sub_category
+shorts,կարճաշալվար,sub_category
+underwear,ներքնազգեստ,sub_category
+cap,կեպի,sub_category
+hat,գլխարկ,sub_category
+shawl,շալ,sub_category
+sunglasses,արևային ակնոց,sub_category
+others,այլ,sub_category
+black,սև,color
+white,սպիտակ,color
+blue,կապույտ,color
+red,կարմիր,color
+orange,նարնջագույն,color
+yellow,դեղին,color
+brown,շագանակագույն,color
+green,կանաչ,color
+gray,մոխրագույն,color
+male,տղամարդու,gender
+female,կանացի,gender
+unisex,ունիսեքս,gender
+kids-boy,տղաների մանկական,gender
+kids-girl,աղջիկների մանկական,gender
+newborn,նորածնային,gender
+spring,գարուն,season
+summer,ամառ,season
+fall,աշուն,season
+winter,ձմեռ,season
+all-seasons,բոլոր եղանակների,season
+Armenia,Հայաստան,country_of_origin
+China,Չինաստան,country_of_origin
+Vietnam,Վիետնամ,country_of_origin
+Türkiye,Թուրքիա,country_of_origin
+India,Հնդկաստան,country_of_origin
+Bangladesh,Բանգլադեշ,country_of_origin
+Italy,Իտալիա,country_of_origin
+Portugal,Պորտուգալիա,country_of_origin
+Germany,Գերմանիա,country_of_origin
+France,Ֆրանսիա,country_of_origin
+Spain,Իսպանիա,country_of_origin
+Poland,Լեհաստան,country_of_origin
+Romania,Ռումինիա,country_of_origin
+Indonesia,Ինդոնեզիա,country_of_origin
+Cambodia,Կամբոջա,country_of_origin
+Pakistan,Պակիստան,country_of_origin
+Sri Lanka,Շրի Լանկա,country_of_origin
+Myanmar (Burma),Մյանմա,country_of_origin
+Thailand,Թաիլանդ,country_of_origin
+Morocco,Մարոկկո,country_of_origin
+Tunisia,Թունիս,country_of_origin
+Egypt,Եգիպտոս,country_of_origin
+United States,Միացյալ Նահանգներ,country_of_origin
+United Kingdom,Միացյալ Թագավորություն,country_of_origin
+Russia,Ռուսաստան,country_of_origin
+Ukraine,Ուկրաինա,country_of_origin
+Georgia,Վրաստան,country_of_origin
+Japan,Ճապոնիա,country_of_origin
+South Korea,Հարավային Կորեա,country_of_origin
+Netherlands,Նիդերլանդներ,country_of_origin
+Belgium,Բելգիա,country_of_origin
+Austria,Ավստրիա,country_of_origin
+Switzerland,Շվեյցարիա,country_of_origin
+Sweden,Շվեդիա,country_of_origin
+Denmark,Դանիա,country_of_origin
+Bulgaria,Բուլղարիա,country_of_origin
+Serbia,Սերբիա,country_of_origin
+Greece,Հունաստան,country_of_origin
+Mexico,Մեքսիկա,country_of_origin
+Brazil,Բրազիլիա,country_of_origin
+Peru,Պերու,country_of_origin
+Honduras,Հոնդուրաս,country_of_origin
+El Salvador,Սալվադոր,country_of_origin
+Jordan,Հորդանան,country_of_origin
+Malaysia,Մալայզիա,country_of_origin
+Philippines,Ֆիլիպիններ,country_of_origin
+Taiwan,Թայվան,country_of_origin
+Hong Kong SAR China,Հոնկոնգ,country_of_origin
+Lithuania,Լիտվա,country_of_origin
+Latvia,Լատվիա,country_of_origin
+Estonia,Էստոնիա,country_of_origin
+Czechia,Չեխիա,country_of_origin
+Slovakia,Սլովակիա,country_of_origin
+Hungary,Հունգարիա,country_of_origin
+Moldova,Մոլդովա,country_of_origin
+Belarus,Բելառուս,country_of_origin
+Uzbekistan,Ուզբեկստան,country_of_origin
+Kyrgyzstan,Ղրղզստան,country_of_origin
+Kazakhstan,Ղազախստան,country_of_origin
+United Arab Emirates,Արաբական Միացյալ Էմիրություններ,country_of_origin
+Ireland,Իռլանդիա,country_of_origin
+Finland,Ֆինլանդիա,country_of_origin
+Norway,Նորվեգիա,country_of_origin
+Croatia,Խորվաթիա,country_of_origin
+Slovenia,Սլովենիա,country_of_origin
+Bosnia & Herzegovina,Բոսնիա և Հերցեգովինա,country_of_origin
+Albania,Ալբանիա,country_of_origin
+North Macedonia,Հյուսիսային Մակեդոնիա,country_of_origin
+Iran,Իրան,country_of_origin
+Iraq,Իրաք,country_of_origin
+Syria,Սիրիա,country_of_origin
+Ethiopia,Եթովպիա,country_of_origin
+Kenya,Քենիա,country_of_origin
+Tanzania,Տանզանիա,country_of_origin
+Nigeria,Նիգերիա,country_of_origin
+South Africa,Հարավային Աֆրիկա,country_of_origin
+cotton,բամբակ,material
+polyester,պոլիեսթեր,material
+recycled polyester,վերամշակված պոլիեսթեր,material
+wool,բուրդ,material
+virgin wool,մաքուր բուրդ,material
+merino wool,մերինոսի բուրդ,material
+silk,մետաքս,material
+linen,կտավատ,material
+viscose,վիսկոզա,material
+elastane,էլաստան,material
+spandex,սպանդեքս,material
+lycra,լայկրա,material
+nylon,նեյլոն,material
+polyamide,պոլիամիդ,material
+acrylic,ակրիլ,material
+leather,կաշի,material
+faux leather,արհեստական կաշի,material
+suede,թավշակաշի,material
+denim,ջինս,material
+cashmere,քաշմիր,material
+rayon,ռայոն,material
+modal,մոդալ,material
+bamboo,բամբուկ,material
+fleece,ֆլիս,material
+velvet,թավիշ,material
+polyurethane,պոլիուրեթան,material
+rubber,ռետին,material

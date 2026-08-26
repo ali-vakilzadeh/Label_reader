@@ -1,0 +1,43 @@
+{
+  "name": "apparel-vision-middleware",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Middleware bridge between Android scanner clients and the Gemini 2.5 Flash Vision API",
+  "main": "dist/src/index.js",
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/src/index.js",
+    "dev": "tsx watch src/index.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "convert:translations": "tsx scripts/convertTranslations.ts",
+    "render:now": "tsx scripts/runRenderJob.ts"
+  },
+  "dependencies": {
+    "@google/genai": "^1.28.0",
+    "better-sqlite3": "^11.10.0",
+    "cors": "^2.8.5",
+    "csv-parser": "^3.2.0",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "express-rate-limit": "^7.5.0",
+    "fuse.js": "^7.1.0",
+    "helmet": "^8.1.0",
+    "jsonwebtoken": "^9.0.2",
+    "multer": "^2.0.1",
+    "node-cron": "^3.0.3"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/cors": "^2.8.17",
+    "@types/express": "^4.17.21",
+    "@types/jsonwebtoken": "^9.0.9",
+    "@types/multer": "^1.4.12",
+    "@types/node": "^20.17.0",
+    "@types/node-cron": "^3.0.11",
+    "tsx": "^4.19.3",
+    "typescript": "^5.8.3"
+  }
+}

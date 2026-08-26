@@ -1,0 +1,15 @@
+node_modules/
+dist/
+.env
+*.log
+
+# Runtime data — SQLite databases and generated artefacts
+data/*.db
+data/*.db-shm
+data/*.db-wal
+data/legalArmenianMap.json
+
+# Operator-uploaded photos and rendered catalog shots
+uploads/
+public/catalog/*
+!public/catalog/.gitkeep
