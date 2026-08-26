@@ -25,8 +25,7 @@ To see mobile app architecture see: [Mobile App Architecture](/Mobile_App/archit
 
 ## Project Status
 
-Project is currently under active development.
-
+Project is currently under active development. See the progress [daily log to and completion checklist](/dev_log.md).
 
 ## Native Android App
 
