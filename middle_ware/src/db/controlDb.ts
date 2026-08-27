@@ -212,6 +212,11 @@ export function initialiseStatus(): ServerStatusRow {
   return readStatus();
 }
 
+// The singleton status row is a schema invariant, not something a caller has to
+// remember to create. Seeding it here means a request that arrives before
+// startControlService() reads a valid row instead of crashing on undefined.
+initStatusStmt.run({ now: Date.now(), capacity: env.flywheelMaxRecords });
+
 export function readStatus(): ServerStatusRow {
   return readStatusStmt.get() as ServerStatusRow;
 }

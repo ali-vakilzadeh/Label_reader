@@ -246,7 +246,11 @@ async function main(): Promise<void> {
     const fetched = await fetch(`${base}/api/v1/vision/result/${id}`, { headers: auth });
     const fetchedBody = (await fetched.json()) as Record<string, any>;
     check('GET /vision/result returns 200', fetched.status === 200, fetched.status);
-    check('reports extraction_status', fetchedBody.extraction_status === 'COMPLETED', fetchedBody.extraction_status);
+    check(
+      'reports READY_TO_CONFIRM',
+      fetchedBody.processing_status === 'READY_TO_CONFIRM',
+      fetchedBody.processing_status,
+    );
     check(
       'returns the same data without re-uploading',
       JSON.stringify(fetchedBody.data) === JSON.stringify(firstBody.data),
@@ -298,7 +302,13 @@ async function main(): Promise<void> {
   });
   const replayedBody = (await replayed.json()) as Record<string, any>;
 
-  check('duplicate answered 200 even with no usable API key', replayed.status === 200, replayedBody);
+  // api_contract.md v1.1: accepted submissions answer 202, replay included.
+  check('duplicate answered 202 even with no usable API key', replayed.status === 202, replayedBody);
+  check(
+    'replay is READY_TO_CONFIRM',
+    replayedBody.processing_status === 'READY_TO_CONFIRM',
+    replayedBody.processing_status,
+  );
   check(
     'stored result replayed verbatim',
     replayedBody.data?.brand_name?.value === 'LIU JO',
@@ -323,10 +333,11 @@ async function main(): Promise<void> {
     headers: auth,
     body: differentForm,
   });
+  const rescanBody = (await rescan.json()) as Record<string, any>;
   check(
-    're-scan with DIFFERENT photos is not replayed',
-    rescan.status !== 200,
-    rescan.status,
+    're-scan with DIFFERENT photos is accepted (202), not replayed',
+    rescan.status === 202 && rescanBody.processing_status === 'PENDING_AI',
+    { status: rescan.status, processing: rescanBody.processing_status },
   );
   check(
     're-scan is queued for fresh extraction',
@@ -336,7 +347,11 @@ async function main(): Promise<void> {
 
   const fetchedOffline = await fetch(`${base}/api/v1/vision/result/${offlineId}`, { headers: auth });
   const fetchedOfflineBody = (await fetchedOffline.json()) as Record<string, any>;
-  check('result endpoint reports the queued state', fetchedOfflineBody.extraction_status === 'PENDING');
+  check(
+    'result endpoint reports the queued state',
+    fetchedOfflineBody.processing_status === 'PENDING_AI',
+    fetchedOfflineBody.processing_status,
+  );
 
   const missing = await fetch(`${base}/api/v1/vision/result/NO-SUCH-SCAN`, { headers: auth });
   check('unknown id returns 404', missing.status === 404, missing.status);

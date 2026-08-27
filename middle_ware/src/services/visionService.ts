@@ -1,14 +1,21 @@
 import { env } from '../config/env';
 import {
   completeExtraction,
+  extractionCounts,
   failExtraction,
   getScan,
   upsertScan,
 } from '../db/operationalDb';
-import { extractApparelData, isGeminiReady } from './geminiService';
+import { extractApparelData } from './geminiService';
 import { classifyGeminiError, type FaultDisposition } from './geminiErrors';
-import { isVisionPaused, reportVisionFault, reportVisionSuccess } from './controlService';
+import {
+  activeFault,
+  isVisionPaused,
+  reportVisionFault,
+  reportVisionSuccess,
+} from './controlService';
 import { interceptLowConfidence } from './flywheelService';
+import { requestDrain } from './drainSignal';
 import {
   buildCatalogUrl,
   digestImages,
@@ -26,6 +33,8 @@ import {
   type ExtractedFieldName,
   type ExtractionStatus,
   type GeminiRawExtraction,
+  type ProcessingStatus,
+  type ServerScanRow,
   type VisionExtractResponse,
 } from '../types';
 
@@ -142,14 +151,15 @@ export function cloneFromParent(request: ExtractRequest): VisionExtractResponse 
 
   logger.info(`Cloned ${parentId} -> ${request.apparelId} (Gemini bypassed)`);
 
-  return {
-    status: 'success',
-    apparel_id: request.apparelId,
-    cloned_from: parentId,
+  // A clone needs no AI, so it is ready the moment it is stored.
+  return buildScanResponse({
+    apparelId: request.apparelId,
+    clonedFrom: parentId,
     timestamp,
-    catalog_image_url: catalogUrl,
+    catalogUrl,
+    processingStatus: 'READY_TO_CONFIRM',
     data,
-  };
+  });
 }
 
 export type ExtractionOutcome =
@@ -244,9 +254,130 @@ export async function runExtraction(
 }
 
 /** Full extraction path: Gemini vision + normalisation + flywheel screening. */
-export async function extractFromImages(
-  request: ExtractRequest,
-): Promise<VisionExtractResponse> {
+// ---------------------------------------------------------------- v1.1 ----
+
+/**
+ * Client-facing queue snapshot. Drives the polling hints in every scan response
+ * (api_contract.md v1.1 §4.2).
+ */
+export interface QueueSnapshot {
+  depth: number;
+  estimatedWaitSeconds: number | null;
+  retryAfterSeconds: number;
+  blockingFault: string | null;
+}
+
+export function queueSnapshot(): QueueSnapshot {
+  const depth = extractionCounts().pending;
+  const paused = isVisionPaused();
+  const blockingFault = paused ? activeFault() : null;
+
+  // While paused the wait is operator-dependent, so no honest estimate exists.
+  // Reporting a number there would be a guess the operator would rely on.
+  const estimatedWaitSeconds = paused ? null : depth * env.visionSecondsPerItem;
+
+  // Poll at the ceiling while paused; otherwise track the estimate, clamped so
+  // devices neither hammer the server nor sleep through a fast queue.
+  const retryAfterSeconds = paused
+    ? env.pollRetryMaxSeconds
+    : Math.min(
+        env.pollRetryMaxSeconds,
+        Math.max(env.pollRetryMinSeconds, estimatedWaitSeconds ?? env.pollRetryMinSeconds),
+      );
+
+  return { depth, estimatedWaitSeconds, retryAfterSeconds, blockingFault };
+}
+
+/** Maps stored extraction state onto the published vocabulary. */
+export function processingStatusOf(status: ExtractionStatus): ProcessingStatus {
+  switch (status) {
+    case 'COMPLETED':
+      return 'READY_TO_CONFIRM';
+    case 'PARKED':
+      return 'NEEDS_ATTENTION';
+    default:
+      return 'PENDING_AI';
+  }
+}
+
+interface ResponseParts {
+  apparelId: string;
+  clonedFrom: string | null;
+  timestamp: string;
+  catalogUrl: string;
+  processingStatus: ProcessingStatus;
+  data: ExtractedData | null;
+  attentionReason?: string | null;
+}
+
+/** Single place the v1.1 response shape is assembled. */
+export function buildScanResponse(parts: ResponseParts): VisionExtractResponse {
+  const snapshot = queueSnapshot();
+  const terminal = parts.processingStatus !== 'PENDING_AI';
+
+  return {
+    status: 'success',
+    apparel_id: parts.apparelId,
+    cloned_from: parts.clonedFrom,
+    timestamp: parts.timestamp,
+    catalog_image_url: parts.catalogUrl,
+    processing_status: parts.processingStatus,
+    // A finished scan owes no wait, whatever the rest of the queue is doing.
+    queue_depth: terminal ? 0 : snapshot.depth,
+    estimated_wait_seconds: terminal ? 0 : snapshot.estimatedWaitSeconds,
+    retry_after_seconds: terminal ? env.pollRetryMinSeconds : snapshot.retryAfterSeconds,
+    blocking_fault: terminal ? null : snapshot.blockingFault,
+    attention_reason: parts.attentionReason ?? null,
+    data: parts.data,
+  };
+}
+
+/** Builds a response from a stored row — used by both result endpoints. */
+export function responseForScan(scan: ServerScanRow): VisionExtractResponse {
+  const processingStatus = processingStatusOf(scan.extraction_status);
+  let data: ExtractedData | null = null;
+
+  if (processingStatus === 'READY_TO_CONFIRM') {
+    try {
+      data = JSON.parse(scan.raw_json_data) as ExtractedData;
+    } catch {
+      // A corrupt payload must not read as "ready" — send it for review instead
+      // of handing the operator garbage.
+      logger.error(`Stored extraction for ${scan.apparel_id} is unparseable.`);
+      return buildScanResponse({
+        apparelId: scan.apparel_id,
+        clonedFrom: scan.cloned_from,
+        timestamp: scan.timestamp,
+        catalogUrl: scan.catalog_image_url,
+        processingStatus: 'NEEDS_ATTENTION',
+        data: null,
+        attentionReason: 'Stored extraction could not be read.',
+      });
+    }
+  }
+
+  return buildScanResponse({
+    apparelId: scan.apparel_id,
+    clonedFrom: scan.cloned_from,
+    timestamp: scan.timestamp,
+    catalogUrl: scan.catalog_image_url,
+    processingStatus,
+    data,
+    attentionReason:
+      processingStatus === 'NEEDS_ATTENTION'
+        ? (scan.extraction_error ?? 'This scan could not be extracted automatically.')
+        : null,
+  });
+}
+
+/**
+ * Accepts a scan for asynchronous extraction (api_contract.md v1.1 §4.2).
+ *
+ * Pure async: the vision API is NOT called here. The scan is stored durably and
+ * handed to the drain worker, so the request returns in milliseconds and the
+ * operator never waits on the AI. Every successful outcome is HTTP 202.
+ */
+export function acceptScan(request: ExtractRequest): VisionExtractResponse {
   if (request.files.length === 0) {
     throw new ApiError(
       400,
@@ -255,36 +386,24 @@ export async function extractFromImages(
     );
   }
 
-  // The catalog URL is deterministic and returned immediately; the actual studio
-  // render is produced by the 20:00 cron job.
   const catalogUrl = buildCatalogUrl(request.apparelId);
-
-  // ---- IDEMPOTENT REPLAY --------------------------------------------------
-  // A device that never received our response retries the identical scan. That
-  // must return the stored result, not re-bill the vision API and certainly not
-  // overwrite a finished extraction with an empty one.
   const digest = digestImages(request.files);
   const existing = getScan(request.apparelId);
 
-  if (
-    existing &&
-    existing.extraction_status === 'COMPLETED' &&
-    existing.image_digest === digest
-  ) {
-    logger.info(`Replaying stored result for ${request.apparelId} (duplicate submission).`);
-    return {
-      status: 'success',
-      apparel_id: existing.apparel_id,
-      cloned_from: existing.cloned_from,
-      timestamp: existing.timestamp,
-      catalog_image_url: existing.catalog_image_url,
-      data: JSON.parse(existing.raw_json_data) as ExtractedData,
-    };
+  // ---- IDEMPOTENT REPLAY --------------------------------------------------
+  // A device that never received our response retries the identical scan. That
+  // must return the stored state, not re-queue work or overwrite a finished
+  // extraction with an empty one.
+  if (existing && existing.image_digest === digest) {
+    logger.info(
+      `Duplicate submission for ${request.apparelId} ` +
+        `(${existing.extraction_status}); replaying stored state.`,
+    );
+    return responseForScan(existing);
   }
   // -------------------------------------------------------------------------
 
   const timestamp = new Date().toISOString();
-
   const stored = persistImages(request.apparelId, request.files);
   const imagePaths = stored.map((image) => image.path);
   const keyIndex =
@@ -294,9 +413,9 @@ export async function extractFromImages(
   const keyPhotoPath = stored[keyIndex]?.path ?? null;
 
   // ---- DURABILITY BOUNDARY ------------------------------------------------
-  // The scan is recorded as owed BEFORE Gemini is contacted. Everything after
-  // this point can fail, restart, or be paused for a week without the scan being
-  // forgotten: the row and its photos are on disk and the queue owns them.
+  // Photos and row are committed before anything else can fail. Past this line
+  // the queue owns the scan: an outage, a pause, or a restart costs latency,
+  // never data.
   upsertScan({
     apparel_id: request.apparelId,
     cloned_from: null,
@@ -312,68 +431,31 @@ export async function extractFromImages(
   });
   // -------------------------------------------------------------------------
 
-  if (!isGeminiReady()) {
-    // Queued, not lost. The drain worker will pick it up once a key is set.
-    throw new ApiError(
-      503,
-      'VISION_QUEUED',
-      'Vision extraction is not configured. The scan has been stored and will be ' +
-        'processed automatically once the server is configured.',
-    );
-  }
+  // Nudge the drain worker so an idle queue starts immediately rather than
+  // waiting out the sweep interval.
+  requestDrain();
 
-  if (isVisionPaused()) {
-    throw new ApiError(
-      503,
-      'VISION_QUEUED',
-      'Vision processing is paused pending an operator action. The scan has been ' +
-        'stored and will be processed automatically when processing resumes.',
-    );
-  }
-
-  const outcome = await runExtraction(request.apparelId, imagePaths, request.files);
-
-  if (!outcome.ok) {
-    throw new ApiError(
-      outcome.disposition === 'REJECT' ? 422 : 502,
-      outcome.disposition === 'REJECT' ? 'VISION_REQUEST_REJECTED' : 'VISION_QUEUED',
-      outcome.disposition === 'REJECT'
-        ? 'The vision service could not read these images. The scan has been stored ' +
-          'and parked for review.'
-        : 'Vision extraction did not complete. The scan has been stored and will be ' +
-          'retried automatically.',
-    );
-  }
-
-  const data = outcome.data;
-
-  // Hidden interception — best-effort, never blocks the operator response.
-  interceptLowConfidence({
+  return buildScanResponse({
     apparelId: request.apparelId,
-    keyPhotoPath,
-    imagePaths,
-    extraction: data,
-    rawGemini: outcome.raw,
-  });
-
-  return {
-    status: 'success',
-    apparel_id: request.apparelId,
-    cloned_from: null,
+    clonedFrom: null,
     timestamp,
-    catalog_image_url: catalogUrl,
-    data,
-  };
+    catalogUrl,
+    processingStatus: 'PENDING_AI',
+    data: null,
+  });
 }
 
-export function processExtraction(
-  request: ExtractRequest,
-): Promise<VisionExtractResponse> {
+/**
+ * Single entry point for POST /vision/extract.
+ *
+ * Both branches are synchronous now: cloning reads the parent from the local DB,
+ * and a normal scan is stored and queued. Neither waits on the vision API.
+ */
+export function processExtraction(request: ExtractRequest): VisionExtractResponse {
   if (request.clonedFrom) {
-    // Synchronous by nature, wrapped so callers have one uniform signature.
-    return Promise.resolve(cloneFromParent(request));
+    return cloneFromParent(request);
   }
-  return extractFromImages(request);
+  return acceptScan(request);
 }
 
 /** Re-exported for tests and the export service. */

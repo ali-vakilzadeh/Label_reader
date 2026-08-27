@@ -8,8 +8,8 @@ durable intake queue and a UI control channel. Build and typecheck clean; **139 
 no network access**, rising to ~183 when a live API key with quota is available. The vision path
 is verified against the live API with real photos.
 
-**Companion documents:** [`UI_messaging_protocol.md`](UI_messaging_protocol.md) — the contract the
-Web UI codes against — and [`control_channel_contract.md`](control_channel_contract.md).
+**Companion document:** [`UI_messaging_protocol.md`](UI_messaging_protocol.md) — the contract the
+Web UI codes against.
 
 ---
 

@@ -1,7 +1,7 @@
 /**
- * Runs every SQL statement published in control_channel_contract.md against a
- * real control.db, exactly as a UI developer would. A doc that ships queries
- * nobody executed is a doc that lies.
+ * Runs every SQL statement published in UI_messaging_protocol.md against a real
+ * control.db, exactly as a UI developer would. A doc that ships queries nobody
+ * executed is a doc that lies.
  *
  * Usage: npx tsx tests/contractQueries.ts
  */
@@ -36,7 +36,7 @@ async function main(): Promise<void> {
   check('journal mode is WAL', String(uiDb.pragma('journal_mode', { simple: true })) === 'wal');
   check('busy_timeout applied', Number(uiDb.pragma('busy_timeout', { simple: true })) === 5000);
 
-  console.log('\n== §2 server_status ==');
+  console.log('\n== UIMP §3 server_status ==');
   const status = uiDb.prepare('SELECT * FROM server_status WHERE id = 1').get() as Record<
     string,
     unknown
@@ -59,7 +59,7 @@ async function main(): Promise<void> {
   }
   check('heartbeat is fresh', Date.now() - Number(status.heartbeat_at) < 60_000);
 
-  console.log('\n== §3 open events, localised ==');
+  console.log('\n== UIMP §4 open events, localised ==');
   const openEvents = uiDb
     .prepare(
       `SELECT e.*, d.severity, d.category, d.requires_action,
@@ -74,7 +74,7 @@ async function main(): Promise<void> {
     .all('hy');
   check('documented join executes', Array.isArray(openEvents));
 
-  console.log('\n== §3 translations survive a dictionary reseed ==');
+  console.log('\n== UIMP §8 translations survive a dictionary reseed ==');
   uiDb
     .prepare(
       `INSERT INTO message_translations (code, locale, text, hint, updated_at)
@@ -111,7 +111,7 @@ async function main(): Promise<void> {
     translated,
   );
 
-  console.log('\n== §4 every catalogued code is resolvable ==');
+  console.log('\n== UIMP §5 every catalogued code is resolvable ==');
   const codes = uiDb.prepare('SELECT code FROM message_dictionary').all() as { code: string }[];
   check(
     'dictionary holds the whole catalogue',
@@ -123,7 +123,7 @@ async function main(): Promise<void> {
     .all() as { code: string }[];
   check('actionable codes present', actionable.length > 0, actionable.length);
 
-  console.log('\n== §5 command lifecycle from the UI side ==');
+  console.log('\n== UIMP §6 command lifecycle from the UI side ==');
   const inserted = uiDb
     .prepare(
       `INSERT INTO ui_commands (command, payload_json, issued_at, issued_by, status)
@@ -148,7 +148,7 @@ async function main(): Promise<void> {
   check('result_detail is populated', afterPoll.result_detail === 'pong', afterPoll);
   check('completed_at stamped', typeof afterPoll.completed_at === 'number');
 
-  console.log('\n== §5 unknown commands are rejected, not ignored ==');
+  console.log('\n== UIMP §6 unknown commands are rejected, not ignored ==');
   const bogus = uiDb
     .prepare(
       `INSERT INTO ui_commands (command, payload_json, issued_at, issued_by, status)
@@ -162,7 +162,7 @@ async function main(): Promise<void> {
   check('unknown command REJECTED', bogusRow.status === 'REJECTED', bogusRow);
   check('rejection explains why', bogusRow.result_detail.includes('Unknown'), bogusRow);
 
-  console.log('\n== §9 acknowledgement query ==');
+  console.log('\n== UIMP §11 acknowledgement query ==');
   uiDb
     .prepare(
       `UPDATE server_events
@@ -172,7 +172,7 @@ async function main(): Promise<void> {
     .run(Date.now());
   check('acknowledgement query runs', true);
 
-  console.log('\n== §9 untranslated-codes query ==');
+  console.log('\n== UIMP §11 untranslated-codes query ==');
   const untranslated = uiDb
     .prepare(
       `SELECT d.code FROM message_dictionary d
@@ -186,7 +186,7 @@ async function main(): Promise<void> {
     `${untranslated.length} untranslated of ${MESSAGE_CATALOGUE.length}`,
   );
 
-  console.log('\n== §9 prioritised actionable query ==');
+  console.log('\n== UIMP §11 prioritised actionable query ==');
   const prioritised = uiDb
     .prepare(
       `SELECT e.code, d.severity

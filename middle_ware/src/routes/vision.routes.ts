@@ -2,7 +2,13 @@ import { Router } from 'express';
 import { requireAuth } from '../middleware/auth';
 import { uploadImages } from '../middleware/upload';
 import { ApiError } from '../middleware/errorHandler';
-import { processExtraction, type ExtractRequest } from '../services/visionService';
+import {
+  processExtraction,
+  queueSnapshot,
+  responseForScan,
+  type ExtractRequest,
+} from '../services/visionService';
+import type { VisionResultsBatchResponse } from '../types';
 import { getScan } from '../db/operationalDb';
 import { env } from '../config/env';
 
@@ -51,7 +57,10 @@ visionRouter.post('/extract', requireAuth, uploadImages, async (req, res, next) 
       files,
     };
 
-    res.json(await processExtraction(request));
+    // api_contract.md v1.1 §4.2: every accepted scan answers 202, whether it is
+    // queued, cloned, or a replay. Clients branch on processing_status, never on
+    // the status code.
+    res.status(202).json(processExtraction(request));
   } catch (error) {
     next(error);
   }
@@ -85,16 +94,61 @@ visionRouter.get('/result/:apparel_id', requireAuth, (req, res, next) => {
       );
     }
 
+    res.json(responseForScan(scan));
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * GET /api/v1/vision/results?ids=a,b,c
+ *
+ * Batch form of the single-result endpoint (api_contract.md v1.1 §4.4). A device
+ * draining a backlog after an outage may be waiting on dozens of scans; polling
+ * them one at a time would be one request each.
+ *
+ * Unknown ids are reported in `not_found` rather than failing the batch, so one
+ * stale id cannot block the rest.
+ */
+visionRouter.get('/results', requireAuth, (req, res, next) => {
+  try {
+    const raw = readString(req.query.ids);
+    if (!raw) {
+      throw new ApiError(
+        400,
+        'MISSING_IDS',
+        'Provide one or more apparel ids, e.g. ?ids=890123456789,890123456790',
+      );
+    }
+
+    const ids = [...new Set(raw.split(',').map((id) => id.trim()).filter(Boolean))];
+    if (ids.length === 0) {
+      throw new ApiError(400, 'MISSING_IDS', 'No usable apparel ids were supplied.');
+    }
+    if (ids.length > env.resultsBatchLimit) {
+      throw new ApiError(
+        400,
+        'TOO_MANY_IDS',
+        `At most ${env.resultsBatchLimit} ids may be requested at once.`,
+      );
+    }
+
+    const results = [];
+    const notFound: string[] = [];
+    for (const id of ids) {
+      const scan = getScan(id);
+      if (scan) results.push(responseForScan(scan));
+      else notFound.push(id);
+    }
+
+    const snapshot = queueSnapshot();
     res.json({
       status: 'success',
-      apparel_id: scan.apparel_id,
-      cloned_from: scan.cloned_from,
-      timestamp: scan.timestamp,
-      catalog_image_url: scan.catalog_image_url,
-      extraction_status: scan.extraction_status,
-      extraction_fault_code: scan.extraction_fault_code,
-      data: JSON.parse(scan.raw_json_data) as unknown,
-    });
+      results,
+      not_found: notFound,
+      queue_depth: snapshot.depth,
+      retry_after_seconds: snapshot.retryAfterSeconds,
+    } satisfies VisionResultsBatchResponse);
   } catch (error) {
     next(error);
   }

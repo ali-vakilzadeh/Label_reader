@@ -167,7 +167,13 @@ async function main(): Promise<void> {
     }),
   });
   const cloneBody = (await clone.json()) as Record<string, any>;
-  check('clone returns 200 with no images uploaded', clone.status === 200, cloneBody);
+  // api_contract.md v1.1: every accepted submission answers 202, including clones.
+  check('clone returns 202 with no images uploaded', clone.status === 202, cloneBody);
+  check(
+    'clone is immediately READY_TO_CONFIRM',
+    cloneBody.processing_status === 'READY_TO_CONFIRM',
+    cloneBody.processing_status,
+  );
   check('cloned_from is echoed', cloneBody.cloned_from === '890123456789', cloneBody.cloned_from);
   check('apparel_id is the new child id', cloneBody.apparel_id === '890123456790');
   check(

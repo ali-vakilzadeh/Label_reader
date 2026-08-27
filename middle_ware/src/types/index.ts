@@ -42,13 +42,44 @@ export interface GeminiRawExtraction {
   weights: ConfidenceField[];
 }
 
+/**
+ * Pipeline position of one scan, as published to the Android client.
+ * Bound by api_contract.md v1.1 §3 — do not rename without a contract revision.
+ */
+export type ProcessingStatus = 'PENDING_AI' | 'READY_TO_CONFIRM' | 'NEEDS_ATTENTION';
+
+/**
+ * The v1.1 scan response. Returned by POST /vision/extract (always 202) and by
+ * the result endpoints (200).
+ *
+ * `data` is non-null only when processing_status is READY_TO_CONFIRM.
+ */
 export interface VisionExtractResponse {
   status: 'success';
   apparel_id: string;
   cloned_from: string | null;
   timestamp: string;
   catalog_image_url: string;
-  data: ExtractedData;
+  processing_status: ProcessingStatus;
+  /** Scans queued ahead of this one. */
+  queue_depth: number;
+  /** Estimated seconds until ready; null when paused and no estimate is meaningful. */
+  estimated_wait_seconds: number | null;
+  /** When the client should poll next. Always present, clamped to 5..120. */
+  retry_after_seconds: number;
+  /** Fault code when processing is paused, else null. Advisory. */
+  blocking_fault: string | null;
+  /** Short cause, set only for NEEDS_ATTENTION. */
+  attention_reason?: string | null;
+  data: ExtractedData | null;
+}
+
+export interface VisionResultsBatchResponse {
+  status: 'success';
+  results: VisionExtractResponse[];
+  not_found: string[];
+  queue_depth: number;
+  retry_after_seconds: number;
 }
 
 export interface ApiErrorBody {

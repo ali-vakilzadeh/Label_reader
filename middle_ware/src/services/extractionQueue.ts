@@ -4,6 +4,7 @@ import { interceptLowConfidence } from './flywheelService';
 import { consumeDrainRequest, isVisionPaused } from './controlService';
 import { isGeminiReady } from './geminiService';
 import { runExtraction } from './visionService';
+import { onDrainRequested } from './drainSignal';
 import { logger } from '../utils/logger';
 
 /**
@@ -115,8 +116,29 @@ async function tick(): Promise<void> {
   }
 }
 
+/**
+ * Debounced nudge from the request path. A batch of scans arriving together
+ * should cause one sweep, not one per scan, so repeated calls inside the window
+ * collapse into a single scheduled tick. `tick()` also guards re-entry, so a
+ * nudge during an in-flight drain is harmless.
+ */
+const NUDGE_DEBOUNCE_MS = 250;
+let nudgeTimer: NodeJS.Timeout | null = null;
+
+function handleDrainRequest(): void {
+  if (nudgeTimer) return;
+  nudgeTimer = setTimeout(() => {
+    nudgeTimer = null;
+    void tick();
+  }, NUDGE_DEBOUNCE_MS);
+  nudgeTimer.unref();
+}
+
 export function startExtractionQueue(): void {
   if (timer) return;
+
+  // Let the request path wake the worker without importing it (see drainSignal).
+  onDrainRequested(handleDrainRequest);
 
   timer = setInterval(() => {
     // An operator pressing "retry" schedules an immediate sweep; otherwise the
@@ -135,6 +157,9 @@ export function startExtractionQueue(): void {
 export function stopExtractionQueue(): void {
   if (timer) clearInterval(timer);
   timer = null;
+  if (nudgeTimer) clearTimeout(nudgeTimer);
+  nudgeTimer = null;
+  onDrainRequested(null);
 }
 
 /** Manual trigger for scripts and tests. */

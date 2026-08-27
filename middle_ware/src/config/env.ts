@@ -102,6 +102,15 @@ export const env = {
   renderCronTimezone: optional('RENDER_CRON_TIMEZONE', 'Asia/Yerevan'),
   renderCronEnabled: optional('RENDER_CRON_ENABLED', 'true') === 'true',
   renderBatchSize: numeric('RENDER_BATCH_SIZE', 200),
+  // --- Client polling hints ---------------------------------------------
+  /** Per-scan cost used to estimate queue wait for the operator. */
+  visionSecondsPerItem: numeric('VISION_SECONDS_PER_ITEM', 5),
+  /** Floor and ceiling for the retry_after_seconds hint sent to devices. */
+  pollRetryMinSeconds: numeric('POLL_RETRY_MIN_SECONDS', 5),
+  pollRetryMaxSeconds: numeric('POLL_RETRY_MAX_SECONDS', 120),
+  /** Maximum ids accepted by GET /vision/results. */
+  resultsBatchLimit: numeric('RESULTS_BATCH_LIMIT', 100),
+
   /** A failed render is retried on later nights until this many attempts. */
   renderMaxAttempts: numeric('RENDER_MAX_ATTEMPTS', 3),
 
