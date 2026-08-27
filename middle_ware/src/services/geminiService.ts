@@ -1,8 +1,15 @@
+import dotenv from 'dotenv';
 import { GoogleGenAI, Type } from '@google/genai';
 import type { Schema } from '@google/genai';
 import { env } from '../config/env';
 import { logger } from '../utils/logger';
 import { TAXONOMY_KEYS } from '../utils/fuzzyMatcher';
+import {
+  storedApiKey,
+  storedImageModel,
+  storedVisionModel,
+} from '../db/visionSettings';
+import { classifyGeminiError } from './geminiErrors';
 import type { GeminiRawExtraction } from '../types';
 
 /**
@@ -13,15 +20,100 @@ import type { GeminiRawExtraction } from '../types';
 let client: GoogleGenAI | null = null;
 
 export function getClient(): GoogleGenAI {
-  if (!env.geminiApiKey) {
+  const apiKey = activeApiKey();
+  if (!apiKey) {
     throw new Error('GEMINI_API_KEY is not configured on this server.');
   }
-  if (!client) client = new GoogleGenAI({ apiKey: env.geminiApiKey });
+  if (!client) client = new GoogleGenAI({ apiKey });
   return client;
 }
 
 export function isGeminiReady(): boolean {
-  return Boolean(env.geminiApiKey);
+  return Boolean(activeApiKey());
+}
+
+/**
+ * Live view of the credentials.
+ *
+ * Precedence: an operator-managed key stored (and validated) through the UI wins
+ * over the .env bootstrap value. .env is how the server is first provisioned;
+ * after that the UI is the source of truth.
+ *
+ * There is deliberately NO fallback to an older key when the current one is
+ * absent or rejected. A cleared or bad key means "wait for a corrected key",
+ * never "quietly keep using the previous one" — silently reverting would make
+ * the operator believe a change took effect when it did not.
+ */
+export function activeApiKey(): string {
+  const managed = storedApiKey();
+  if (managed) return managed;
+  return (process.env.GEMINI_API_KEY ?? '').trim();
+}
+
+export function activeVisionModel(): string {
+  return (
+    storedVisionModel() ??
+    ((process.env.GEMINI_VISION_MODEL ?? '').trim() || env.geminiVisionModel)
+  );
+}
+
+export function activeImageModel(): string {
+  return (
+    storedImageModel() ??
+    ((process.env.GEMINI_IMAGE_MODEL ?? '').trim() || env.geminiImageModel)
+  );
+}
+
+/** Where the key currently in force came from — surfaced to the UI. */
+export function credentialSource(): 'UI' | 'ENV' | 'NONE' {
+  if (storedApiKey()) return 'UI';
+  if ((process.env.GEMINI_API_KEY ?? '').trim()) return 'ENV';
+  return 'NONE';
+}
+
+/**
+ * Validates a candidate key/model pair against the live API before it is
+ * adopted. Returns null on success, or a classified failure.
+ */
+export async function probeCredentials(
+  apiKey: string,
+  model: string,
+): Promise<{ ok: true } | { ok: false; fault: string; detail: string }> {
+  try {
+    const probe = new GoogleGenAI({ apiKey });
+    await probe.models.generateContent({
+      model,
+      contents: 'ping',
+      config: { maxOutputTokens: 1 },
+    });
+    return { ok: true };
+  } catch (error) {
+    const classification = classifyGeminiError(error);
+    // A transient outage is not the candidate's fault — do not reject on it.
+    if (
+      classification.fault === 'VISION_TRANSIENT' ||
+      classification.fault === 'VISION_NETWORK' ||
+      classification.fault === 'VISION_RATE_LIMIT_MINUTE'
+    ) {
+      return { ok: true };
+    }
+    return { ok: false, fault: classification.fault, detail: classification.detail };
+  }
+}
+
+/**
+ * Re-reads .env and drops the cached client so the next call uses the new
+ * credentials. Invoked by the UI command VISION_SETTINGS_UPDATED.
+ */
+export function reloadGeminiClient(): void {
+  // `override` is required: dotenv leaves already-set variables alone by default,
+  // which would make an edited key invisible to a running process.
+  dotenv.config({ override: true });
+  client = null;
+  logger.info(
+    `Gemini settings reloaded — vision model ${activeVisionModel()}, ` +
+      `key ${activeApiKey() ? 'present' : 'MISSING'}.`,
+  );
 }
 
 /** HTTP statuses worth retrying: rate limits and transient backend faults. */
@@ -225,7 +317,7 @@ export async function extractApparelData(
       temperature: 0,
     },
       }),
-    env.geminiVisionModel,
+    activeVisionModel(),
     'Vision extraction',
   );
 
@@ -265,7 +357,7 @@ export async function renderStudioImage(
           },
         ],
       }),
-    env.geminiImageModel,
+    activeImageModel(),
     'Studio render',
   );
 

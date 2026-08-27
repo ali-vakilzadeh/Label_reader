@@ -2,7 +2,13 @@ import { createApp } from './app';
 import { env } from './config/env';
 import { closeOperationalDb } from './db/operationalDb';
 import { closeFlywheelDb } from './db/flywheelDb';
+import { closeControlDb } from './db/controlDb';
 import { startCronService, stopCronService } from './services/cronService';
+import { startControlService, stopControlService } from './services/controlService';
+import {
+  startExtractionQueue,
+  stopExtractionQueue,
+} from './services/extractionQueue';
 import { isGeminiReady } from './services/geminiService';
 import { loadLegalArmenianMap } from './services/exportService';
 import { logger } from './utils/logger';
@@ -15,12 +21,17 @@ function main(): void {
   loadLegalArmenianMap();
 
   if (!isGeminiReady()) {
-    logger.warn('GEMINI_API_KEY is not set — vision extraction and rendering are disabled.');
+    logger.warn(
+      'GEMINI_API_KEY is not set — scans will still be accepted and queued, ' +
+        'but extraction is deferred until a key is configured.',
+    );
   }
 
   const server = app.listen(env.port, () => {
     logger.info(`Middleware listening on port ${env.port} (${env.nodeEnv})`);
     logger.info(`Catalog base URL: ${env.publicProtocol}://${env.serverHost}/catalog/`);
+    startControlService();
+    startExtractionQueue();
     startCronService();
   });
 
@@ -31,9 +42,12 @@ function main(): void {
   const shutdown = (signal: string): void => {
     logger.info(`${signal} received — shutting down.`);
     stopCronService();
+    stopExtractionQueue();
+    stopControlService();
     server.close(() => {
       closeOperationalDb();
       closeFlywheelDb();
+      closeControlDb();
       logger.info('Shutdown complete.');
       process.exit(0);
     });

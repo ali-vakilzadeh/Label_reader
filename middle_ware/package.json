@@ -8,14 +8,20 @@
     "node": ">=20.0.0"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "build": "tsc -p tsconfig.build.json",
     "start": "node dist/src/index.js",
     "dev": "tsx watch src/index.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "convert:translations": "tsx scripts/convertTranslations.ts",
     "render:now": "tsx scripts/runRenderJob.ts",
     "test": "tsx tests/smoke.ts",
-    "test:live": "tsx tests/liveExtract.ts"
+    "test:live": "tsx tests/liveExtract.ts",
+    "test:errors": "tsx tests/errorClassification.ts",
+    "test:durability": "tsx tests/durability.ts",
+    "test:cron": "tsx tests/cronCheck.ts",
+    "test:all": "npm run typecheck && npm run test && npm run test:errors && npm run test:contract && npm run test:settings",
+    "test:contract": "tsx tests/contractQueries.ts",
+    "test:settings": "tsx tests/settingsAndDelivery.ts"
   },
   "dependencies": {
     "@google/genai": "^1.28.0",

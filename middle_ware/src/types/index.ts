@@ -59,6 +59,17 @@ export interface ApiErrorBody {
 
 export type RenderingStatus = 'PENDING' | 'COMPLETED' | 'FAILED' | 'SKIPPED';
 
+/**
+ * Extraction lifecycle. A scan is durably recorded BEFORE Gemini is called, so
+ * a vision outage can never make a scan disappear.
+ *
+ *   PENDING   accepted and stored; extraction still owed
+ *   COMPLETED extracted successfully
+ *   PARKED    this specific scan cannot be extracted (rejected payload);
+ *             kept forever for human review — never deleted
+ */
+export type ExtractionStatus = 'PENDING' | 'COMPLETED' | 'PARKED';
+
 export interface ServerScanRow {
   apparel_id: string;
   cloned_from: string | null;
@@ -71,6 +82,13 @@ export interface ServerScanRow {
   rendering_status: RenderingStatus;
   render_attempts: number;
   render_error: string | null;
+  extraction_status: ExtractionStatus;
+  extraction_attempts: number;
+  extraction_error: string | null;
+  extraction_fault_code: string | null;
+  next_attempt_at: number | null;
+  image_digest: string | null;
+  completed_at: number | null;
   created_at: number;
   updated_at: number;
 }

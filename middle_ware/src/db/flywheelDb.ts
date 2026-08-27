@@ -148,6 +148,33 @@ export function setFlywheelRenderPath(apparelId: string, renderPath: string): bo
   return result.changes > 0;
 }
 
+/**
+ * Watermark purge. Deletes only samples at or below the rowid the UI reports as
+ * exported, so samples captured while the export was running are preserved.
+ * There is deliberately no "purge everything" path.
+ */
+const purgeThroughStmt = flywheelDb.prepare(
+  'DELETE FROM flywheel_training WHERE rowid <= ?',
+);
+
+export function purgeFlywheelThrough(exportedThroughRowId: number): number {
+  if (!Number.isFinite(exportedThroughRowId) || exportedThroughRowId < 0) return 0;
+  const result = purgeThroughStmt.run(exportedThroughRowId);
+  logger.info(
+    `Flywheel purge: removed ${result.changes} sample(s) at or below rowid ${exportedThroughRowId}.`,
+  );
+  return result.changes;
+}
+
+/** Highest rowid currently stored — the watermark the UI should export through. */
+const maxRowIdStmt = flywheelDb.prepare(
+  'SELECT COALESCE(MAX(rowid), 0) AS max_id FROM flywheel_training',
+);
+
+export function flywheelMaxRowId(): number {
+  return (maxRowIdStmt.get() as { max_id: number }).max_id;
+}
+
 export function closeFlywheelDb(): void {
   try {
     flywheelDb.close();

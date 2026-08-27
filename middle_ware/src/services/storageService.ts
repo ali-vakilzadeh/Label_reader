@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { env } from '../config/env';
@@ -23,6 +24,19 @@ export function catalogFilePath(apparelId: string): string {
 /** Barcodes are client-supplied: keep them safe for use inside a file path. */
 export function sanitizeId(apparelId: string): string {
   return apparelId.replace(/[^A-Za-z0-9._-]/g, '_');
+}
+
+/**
+ * Content fingerprint of an upload set. Order-independent per file position but
+ * stable for the same bytes, so a device re-sending the identical scan is
+ * recognised as a replay rather than a new job.
+ */
+export function digestImages(files: { buffer: Buffer }[]): string {
+  const hash = crypto.createHash('sha256');
+  for (const file of files) {
+    hash.update(crypto.createHash('sha256').update(file.buffer).digest());
+  }
+  return hash.digest('hex');
 }
 
 export interface StoredImage {

@@ -104,6 +104,18 @@ export const env = {
   renderBatchSize: numeric('RENDER_BATCH_SIZE', 200),
   /** A failed render is retried on later nights until this many attempts. */
   renderMaxAttempts: numeric('RENDER_MAX_ATTEMPTS', 3),
+
+  // --- Control channel (shared with the Web UI via control.db) ----------
+  /** How often the middleware stamps its heartbeat and recomputes counters. */
+  controlHeartbeatMs: numeric('CONTROL_HEARTBEAT_MS', 30_000),
+  /** How often UI commands are polled. */
+  controlPollMs: numeric('CONTROL_POLL_MS', 15_000),
+  /** How often the extraction backlog is swept. */
+  queueDrainMs: numeric('QUEUE_DRAIN_MS', 60_000),
+  /** Scans processed per drain sweep. */
+  queueDrainBatch: numeric('QUEUE_DRAIN_BATCH', 25),
+  /** Pending scans above this raise QUEUE_BACKLOG for the UI. */
+  queueBacklogWarning: numeric('QUEUE_BACKLOG_WARNING', 25),
 } as const;
 
 export const isProduction = env.nodeEnv === 'production';

@@ -3,7 +3,13 @@
 **Component:** Middleware bridge between the Android scanner fleet and the Gemini Vision API
 **Location:** `/middle_ware`
 **Stack:** Node.js 20 LTS · TypeScript 5.8 · Express 4.21 · better-sqlite3 11 · @google/genai 1.x
-**Status:** Feature-complete against `api_contract.md` and `server_specification.json`. Build and typecheck clean; 57/57 automated checks pass; the vision path is verified against the live API with real sample photos.
+**Status:** Feature-complete against `api_contract.md` and `server_specification.json`, plus a
+durable intake queue and a UI control channel. Build and typecheck clean; **139 checks pass with
+no network access**, rising to ~183 when a live API key with quota is available. The vision path
+is verified against the live API with real photos.
+
+**Companion documents:** [`UI_messaging_protocol.md`](UI_messaging_protocol.md) — the contract the
+Web UI codes against — and [`control_channel_contract.md`](control_channel_contract.md).
 
 ---
 
@@ -13,7 +19,7 @@
 2. [Architecture](#2-architecture)
 3. [Request lifecycle](#3-request-lifecycle)
 4. [Business rules](#4-business-rules)
-5. [The hidden training flywheel](#5-the-hidden-training-flywheel)
+5. [The training flywheel](#5-the-training-flywheel)
 6. [Overnight rendering](#6-overnight-rendering)
 7. [Bilingual Armenian export](#7-bilingual-armenian-export)
 8. [API reference](#8-api-reference)
@@ -25,6 +31,12 @@
 14. [Testing](#14-testing)
 15. [Verification results](#15-verification-results)
 16. [Known gaps and decisions needed](#16-known-gaps-and-decisions-needed)
+17. [Durability and the intake queue](#17-durability-and-the-intake-queue)
+18. [Concurrency and result delivery](#18-concurrency-and-result-delivery)
+19. [Fault classification](#19-fault-classification)
+20. [The UI control channel](#20-the-ui-control-channel)
+21. [Credential management](#21-credential-management)
+22. [Change log](#22-change-log)
 
 ---
 
@@ -65,7 +77,10 @@ middle_ware/
 │   │
 │   ├── db/
 │   │   ├── operationalDb.ts        server_scans.db  — visible to clients
-│   │   └── flywheelDb.ts           flywheel.db      — hidden training corpus
+│   │   ├── flywheelDb.ts           flywheel.db      — hidden training corpus
+│   │   ├── controlDb.ts            control.db       — shared bus with the Web UI
+│   │   ├── messageCatalogue.ts     published message codes + UI command names
+│   │   └── visionSettings.ts       operator-managed credentials, encrypted
 │   │
 │   ├── middleware/
 │   │   ├── auth.ts                 JWT issue/verify, constant-time compare
@@ -81,7 +96,10 @@ middle_ware/
 │   │
 │   ├── services/
 │   │   ├── geminiService.ts        sole egress to Google; schema, retry, fallback
+│   │   ├── geminiErrors.ts         fault classification (the 429 disambiguation)
 │   │   ├── visionService.ts        orchestration: clone / extract / normalise / persist
+│   │   ├── extractionQueue.ts      background drain of the durable intake queue
+│   │   ├── controlService.ts       pause state, events, UI commands, heartbeat
 │   │   ├── flywheelService.ts      confidence screening and capture
 │   │   ├── renderService.ts        studio render batch
 │   │   ├── cronService.ts          20:00 scheduler with overlap guard
@@ -104,6 +122,10 @@ middle_ware/
 │
 ├── tests/
 │   ├── smoke.ts                    57 offline checks, no API key needed
+│   ├── errorClassification.ts  26 checks against real Gemini error payloads
+│   ├── contractQueries.ts      30 checks: every published UI query, 2nd process
+│   ├── settingsAndDelivery.ts  32 checks: credentials, replay, result recovery
+│   ├── durability.ts           38 checks: the zero-data-loss guarantee
 │   ├── liveExtract.ts              real Gemini call against real photos
 │   └── cronCheck.ts                cron wiring + render failure handling
 │
@@ -112,7 +134,7 @@ middle_ware/
 └── uploads/<apparel_id>/           operator photos as received
 ```
 
-**Total:** 3,253 lines of TypeScript across 32 files.
+**Total:** ~4,900 lines of TypeScript across 40 files.
 
 ### 2.2 Layering rule
 
@@ -308,7 +330,7 @@ drift cannot silently reappear.
 
 ---
 
-## 5. The hidden training flywheel
+## 5. The training flywheel
 
 ### 5.1 Purpose and isolation
 
@@ -538,6 +560,13 @@ Response is the contract payload: `status`, `apparel_id`, `cloned_from`, `timest
 Not published in the API contract. When `FLYWHEEL_ADMIN_KEY` is set and the header is missing or
 wrong, these routes return **404**, not 401 — a 401 would confirm the endpoint exists.
 
+### `GET /api/v1/vision/result/:apparel_id` — Bearer
+
+Recovery path for a device that lost the extract response. Uploads nothing; results are never
+purged, so it can be called at any later time. Returns the contract payload plus
+`extraction_status` (`COMPLETED` / `PENDING` / `PARKED`) and `extraction_fault_code`.
+See [§18.3](#183-what-happens-when-a-device-does-not-receive-the-result).
+
 ### `GET /catalog/IMG_<apparel_id>.jpg` — no auth
 
 Static rendered shots, `Cache-Control: max-age=3600`.
@@ -561,6 +590,8 @@ Static rendered shots, `Cache-Control: max-age=3600`.
 | `CONFIRM_FAILED` | 500 | Ground-truth write did not persist |
 | `VISION_UNAVAILABLE` | 503 | `GEMINI_API_KEY` not configured |
 | `VISION_EXTRACTION_FAILED` | 502 | Gemini failed after all retries |
+| `VISION_QUEUED` | 503 | Stored and queued; extraction deferred (paused, unconfigured, or transient failure) |
+| `SCAN_NOT_FOUND` | 404 | No scan stored for that `apparel_id` |
 | `RATE_LIMITED` | 429 | Per-IP budget exceeded |
 | `INTERNAL_ERROR` | 500 | Unhandled fault |
 
@@ -583,10 +614,21 @@ CREATE TABLE server_scans (
   rendering_status  TEXT NOT NULL DEFAULT 'PENDING',
   render_attempts   INTEGER NOT NULL DEFAULT 0,
   render_error      TEXT,
+  -- extraction lifecycle (v1.1)
+  extraction_status     TEXT NOT NULL DEFAULT 'COMPLETED',  -- PENDING|COMPLETED|PARKED
+  extraction_attempts   INTEGER NOT NULL DEFAULT 0,
+  extraction_error      TEXT,
+  extraction_fault_code TEXT,
+  next_attempt_at       INTEGER,            -- backoff timer for the drain worker
+  image_digest          TEXT,               -- SHA-256 of the photos, for replay detection
+  completed_at          INTEGER,
   created_at        INTEGER NOT NULL,       -- epoch ms
   updated_at        INTEGER NOT NULL
 );
 ```
+
+Columns are added by a forward-only `ensureColumn()` migration at boot, so an existing database
+is upgraded in place rather than rebuilt.
 
 Indexes on `rendering_status`, `created_at`, `username`, `cloned_from`.
 `rendering_status` ∈ `PENDING | COMPLETED | FAILED | SKIPPED`.
@@ -609,14 +651,21 @@ CREATE TABLE flywheel_training (
 
 Indexes on `created_at` (drives FIFO eviction) and `confirmed_at`.
 
-### 9.3 SQLite configuration
+### 9.3 `data/control.db` — shared with the Web UI
+
+Seven tables: `server_status`, `server_events`, `ui_commands`, `message_dictionary`,
+`message_translations`, `vision_settings`, `vision_settings_pending`. This is the only database
+another process writes to. Full schema and semantics in
+[`UI_messaging_protocol.md`](UI_messaging_protocol.md).
+
+### 9.4 SQLite configuration
 
 Both databases run `journal_mode = WAL` so readers never block the writer — important with 10
 devices scanning while a dashboard reads. `busy_timeout = 5000` absorbs brief write contention
 instead of surfacing `SQLITE_BUSY` to an operator. All statements are prepared once at module
 load and reused.
 
-### 9.4 Filesystem layout
+### 9.5 Filesystem layout
 
 ```
 uploads/<apparel_id>/IMG_<apparel_id>_<n>.<ext>   operator photos as received
@@ -697,6 +746,11 @@ semantics on boot.
 | `RENDER_CRON_TIMEZONE` | `Asia/Yerevan` | Schedule timezone |
 | `RENDER_BATCH_SIZE` | `200` | Records per run |
 | `RENDER_MAX_ATTEMPTS` | `3` | Before giving up on a record |
+| `CONTROL_HEARTBEAT_MS` | `30000` | Heartbeat + counter refresh |
+| `CONTROL_POLL_MS` | `15000` | UI command and credential-submission poll |
+| `QUEUE_DRAIN_MS` | `60000` | Extraction backlog sweep |
+| `QUEUE_DRAIN_BATCH` | `25` | Scans per sweep |
+| `QUEUE_BACKLOG_WARNING` | `25` | Pending count that raises `QUEUE_BACKLOG` |
 | `LOG_LEVEL` | `info` | `debug\|info\|warn\|error` |
 
 > `SERVER_HOST` is the one value that is painful to change later: it is baked into every
@@ -1004,12 +1058,21 @@ Then `npm run render:now`.
 
 ## 14. Testing
 
-| Command | Scope | Network |
-| --- | --- | --- |
-| `npm test` | 57 checks: every endpoint, both auth paths, cloning, weights, fuzzy snapping, screening, ring buffer, Armenian export | none |
-| `npm run test:live -- <images...>` | Real Gemini call, full pipeline, persistence and export report | Gemini |
-| `npx tsx tests/cronCheck.ts` | Cron validity, tick reaches the job, failure marking | none |
-| `npm run typecheck` | `tsc --noEmit`, strict mode | none |
+| Command | Checks | Scope | Network |
+| --- | --- | --- | --- |
+| `npm test` | 57 | Every endpoint, both auth paths, cloning, weights, fuzzy snapping, screening, ring buffer, Armenian export | none |
+| `npm run test:errors` | 26 | Fault classification against real captured Gemini payloads | none |
+| `npm run test:contract` | 30 | Every SQL statement published to the UI, executed as a second process | none |
+| `npm run test:settings` | 32 | Credential submission/validation/encryption, replay, result recovery | partial |
+| `npm run test:durability` | 38 | The zero-data-loss guarantee end to end | yes |
+| `npm run test:all` | 139 | typecheck + the four suites that need no live API | none |
+| `npm run test:live -- <images...>` | — | Real Gemini call, full pipeline, persistence and export report | Gemini |
+| `npx tsx tests/cronCheck.ts` | — | Cron validity, tick reaches the job, failure marking | none |
+| `npm run typecheck` | — | `tsc --noEmit`, strict, **including `tests/`** | none |
+
+Suites that touch the live API degrade to explicit `SKIP` lines when the account's own quota is
+exhausted, and still assert the guarantee that must hold regardless — that nothing was lost.
+A skipped check is reported as skipped, never as a pass.
 
 `tests/smoke.ts` boots the real Express app on an ephemeral port and drives it over HTTP — it
 tests the assembled application, not mocks. It isolates itself by clearing
@@ -1099,6 +1162,20 @@ both returned `429 — quota exceeded` on the current key. The render path is th
 implemented and wired but **not verified against the real model**. Enabling billing on the
 Google Cloud project should be sufficient; verify with `npm run render:now` afterwards.
 
+### Resolved since v1.0
+
+**Orphaned scans on vision failure** — scans are now persisted before the vision call and drained
+by a background worker. See [§17](#17-durability-and-the-intake-queue).
+
+**Result destroyed by device retry** — a re-submitted scan replayed from store instead of
+overwriting the completed extraction. See [§18.3](#183-what-happens-when-a-device-does-not-receive-the-result).
+
+**No operator visibility** — faults now reach the Web UI as coded, actionable events over the
+control channel. See [§20](#20-the-ui-control-channel).
+
+**API key changes required shell access** — keys are now submitted through the UI, validated
+before adoption, and encrypted at rest. See [§21](#21-credential-management).
+
 ### Deferred by design
 
 **5. No upload retention policy.** `uploads/` grows with every scan. A production deployment
@@ -1117,3 +1194,450 @@ revisit if the schema grows.
 **8. Render batch is sequential.** Deliberate, to respect image-model rate limits. If nightly
 volume outgrows the window, introduce a small concurrency pool with a token-bucket limiter
 rather than removing the sequencing.
+
+**9. Parked scans have no review UI.** `QUEUE_PARKED_ITEMS` tells the operator that scans need
+attention and `listParkedScans()` returns them, but the dashboard screen to re-photograph or
+manually complete them is not built. Parked scans are never deleted, so this is a workflow gap,
+not a data risk.
+
+**10. The device is not notified when a queued scan later completes.** A scan extracted by the
+drain worker after the device gave up sits in `server_scans` until something asks for it. The
+device must poll `GET /api/v1/vision/result/:apparel_id`. A push channel would need a contract
+revision; polling on the existing barcode is sufficient and needs no server-issued handle.
+
+**11. Rotating `JWT_SECRET` invalidates stored credentials.** The vision key is encrypted under a
+value derived from it, so a rotation requires re-submitting the key through the UI. The
+middleware logs this explicitly. Provisioning a dedicated encryption secret would remove the
+coupling at the cost of one more thing to manage.
+
+---
+
+## 17. Durability and the intake queue
+
+### 17.1 The problem this solves
+
+The original build persisted photos, called Gemini, and only then wrote the database row. A
+vision failure threw before that write, leaving photos on disk with **no record that the scan
+ever happened**. The only surviving evidence was the Android device's local queue. Measured:
+
+```
+HTTP 502: {"error_code":"VISION_EXTRACTION_FAILED"}
+photos written to disk : 1
+server_scans row       : ABSENT
+Verdict: ORPHANED
+```
+
+For a client with zero tolerance for data loss, a guarantee that lives only on the handset is not
+a guarantee — a supervisor PIN can clear that queue, and a lost device takes the scan with it.
+
+### 17.2 The durability boundary
+
+`extractFromImages()` now commits before it calls anything remote:
+
+```
+persistImages()                  photos to uploads/<apparel_id>/
+upsertScan(extraction_status = 'PENDING')      ◄── DURABILITY BOUNDARY
+─────────────────────────────────────────────────────────────────────
+  everything below may fail, pause, restart, or be abandoned:
+  isGeminiReady? / isVisionPaused? / Gemini call / normalise / flywheel
+```
+
+Past that line the scan is owned by the queue. An outage costs latency, never data.
+
+### 17.3 Extraction lifecycle
+
+| Status | Meaning | Retried? | Deleted? |
+|---|---|---|---|
+| `PENDING` | Accepted; extraction still owed | Yes, indefinitely with capped backoff | Never |
+| `COMPLETED` | Extracted successfully | — | Never |
+| `PARKED` | This payload cannot be extracted (unreadable images) | No | **Never** |
+
+There is deliberately **no attempt ceiling** on extraction. A scan leaves the queue only by
+succeeding or by being parked for a human. This is the difference between "retry until success"
+as a slogan and as a property: retries are unbounded where retrying can work, and where it
+cannot, the work is preserved for a person rather than discarded.
+
+Backoff is `min(30s × 2^attempts, 30 min)`, or the server's own `retryDelay` when it supplied a
+trustworthy one.
+
+### 17.4 The drain worker
+
+`src/services/extractionQueue.ts` sweeps every `QUEUE_DRAIN_MS` (default 60 s):
+
+```sql
+SELECT * FROM server_scans
+WHERE extraction_status = 'PENDING'
+  AND (next_attempt_at IS NULL OR next_attempt_at <= :now)
+  AND image_paths IS NOT NULL
+ORDER BY created_at ASC LIMIT :batch
+```
+
+It is conservative by design:
+
+- **does nothing while vision is paused** — it cannot hammer a dead quota;
+- **stops the sweep on the first halting fault** — the rest of the batch would hit the same wall,
+  and the unprocessed rows simply stay queued;
+- **processes sequentially** — ten scanner devices plus a parallel drain would trip rate limits;
+- **sweeps once at boot** — anything left mid-flight by a crash moves immediately.
+
+The worker reads photos from disk, so it is independent of the original HTTP request.
+
+### 17.5 Resuming clears backoff
+
+When an operator resolves a fault, `resumeVision()` clears `next_attempt_at` on every queued
+scan. A backoff earned by a condition that no longer exists is just a delay; "retry" from a human
+means *now*.
+
+---
+
+## 18. Concurrency and result delivery
+
+*This section answers how the middleware serves ten devices at once, and what happens when a
+device never receives its answer.*
+
+### 18.1 How ten devices are served concurrently
+
+Node runs one JavaScript thread, but every slow operation here is I/O, so requests interleave
+rather than queue:
+
+```
+device A ─┐
+device B ─┼─► Express ─► per-request handler ─► await Gemini (I/O) ─┐
+device C ─┘       (no shared mutable state)                          │
+                                                                     ▼
+                  event loop serves other requests while each await is in flight
+```
+
+**Nothing is routed anywhere.** There is no dispatcher, no correlation table, and no queue of
+device sessions — because there is no need for one. Each HTTP request has its own closure
+holding its own `apparel_id`, its own uploaded buffers, and its own `Promise`. Node resolves that
+promise onto that request's socket. Device B cannot receive device A's result for the same reason
+one browser tab cannot receive another's response: they are different TCP connections with
+different response objects.
+
+The specific properties that make this safe:
+
+| Concern | Why it holds |
+|---|---|
+| Result routing | The response is written to the socket the request arrived on. No lookup, no possibility of mismatch |
+| Shared state | Handlers share no mutable request state. `apparel_id`, buffers and results are all local |
+| Database writes | better-sqlite3 is synchronous; SQLite serialises writers. WAL lets readers proceed concurrently |
+| Write contention | `busy_timeout = 5000` absorbs collisions rather than failing |
+| Row collisions | `apparel_id` is the primary key. Two devices scanning the same barcode is an upsert, not a race |
+| Fuzzy matcher | Indexes are read-only after load; the memo cache is a plain `Map`, safe on one thread |
+| Blocking | The only long operation is the Gemini call, and it is `await`ed — the loop stays free |
+
+Ten concurrent devices is far below the point where this design strains. The practical ceiling
+is the Gemini rate limit, not the middleware.
+
+### 18.2 Identity: three independent keys
+
+| Key | Scope | Purpose |
+|---|---|---|
+| TCP connection | One request | Where the response is written |
+| JWT `username` | One device session | Who is scanning (attribution, logs) |
+| `apparel_id` | Permanent | Which garment the record belongs to |
+
+`apparel_id` is what makes the system recoverable: it is chosen by the client from the physical
+barcode, so the device can always ask about a scan again without needing a server-issued handle.
+
+### 18.3 What happens when a device does not receive the result
+
+**Results are never purged on delivery.** A completed extraction lives in `server_scans`
+indefinitely — delivery is not consumption. There is no TTL, no acknowledgement requirement, and
+no cleanup job that removes results.
+
+The device has two independent recovery paths:
+
+**Path 1 — re-submit (what the existing app already does).** The Android client keeps its scan
+queued until it gets a response, and retries. That retry is now **idempotent**:
+
+```
+POST /api/v1/vision/extract  (same apparel_id, same photos)
+   │
+   ├─ digest = SHA-256 of the uploaded photo bytes
+   ├─ existing row COMPLETED && digest matches?
+   │     └─ YES ─► return the stored result. No Gemini call. No overwrite.
+   └─ NO (different photos) ─► genuine re-scan; queue a fresh extraction
+```
+
+**This was a real bug and is now fixed.** Before the fix, a re-submission wiped the completed
+extraction and re-billed the vision API:
+
+```
+after successful extraction:   status COMPLETED   data {"brand_name":"LIU JO"}
+after the device re-submits:   status PENDING     data {"brand_name":""}
+VERDICT: RESULT DESTROYED
+```
+
+Verified after the fix: the duplicate returns 200 with identical data, `completed_at` is
+unchanged, and `extraction_attempts` does not increase — proving no second API call was made.
+
+**Path 2 — fetch it later, with no upload.**
+
+```
+GET /api/v1/vision/result/:apparel_id     (Bearer)
+```
+
+```json
+{
+  "status": "success",
+  "apparel_id": "890123456789",
+  "extraction_status": "COMPLETED",
+  "extraction_fault_code": null,
+  "catalog_image_url": "https://.../catalog/IMG_890123456789.jpg",
+  "data": { "...": "12 fields" }
+}
+```
+
+`extraction_status` tells the client exactly what to do:
+
+| Value | Client behaviour |
+|---|---|
+| `COMPLETED` | `data` is final; commit to the ledger |
+| `PENDING` | Still queued — poll again later, do not re-upload |
+| `PARKED` | Needs human review — stop polling, flag for a supervisor |
+
+This endpoint is additive; it does not alter the locked contract. It costs nothing to call
+because it uploads no photos, which makes recovery cheap enough to do routinely.
+
+### 18.4 Retention
+
+| Artefact | Retention |
+|---|---|
+| `server_scans` row (incl. result) | Indefinite. Never purged |
+| `uploads/<apparel_id>/` photos | Indefinite (see gap #5) |
+| `flywheel_training` sample | FIFO ring buffer, 10,000 |
+| `public/catalog/*.jpg` | Indefinite |
+
+The only rotating store is the training buffer, and it holds copies — never the sole record of a
+scan.
+
+---
+
+## 19. Fault classification
+
+`src/services/geminiErrors.ts` maps every failure onto a stable code plus a disposition, so
+callers never re-interpret raw errors.
+
+### 19.1 The 429 problem
+
+Gemini returns `429 / RESOURCE_EXHAUSTED` for two unrelated situations: a per-minute burst limit
+that clears in seconds, and a plan that does not cover the model at all. The discriminator is in
+`error.details[]`, not the message text.
+
+**The trap:** when the plan excludes a model, the API still returns a `RetryInfo` alongside
+`limit: 0` — captured verbatim from the live API:
+
+```jsonc
+"message": "... limit: 0, model: gemini-3.1-flash-image ... Please retry in 43.410718034s.",
+"details": [
+  { "@type": ".../QuotaFailure", "violations": [{ "quotaId": "GenerateRequestsPerDayPerProjectPerModel-FreeTier" }] },
+  { "@type": ".../RetryInfo", "retryDelay": "43s" }
+]
+```
+
+That `retryDelay` is misleading. The classifier tests `limit: 0` **before** trusting it.
+
+### 19.2 The taxonomy
+
+| Fault code | HTTP | Disposition | Pauses? |
+|---|---|---|---|
+| `VISION_TRANSIENT` | 5xx | `RETRY` | no |
+| `VISION_NETWORK` | — | `RETRY` | no |
+| `VISION_RATE_LIMIT_MINUTE` | 429 + `PerMinute` | `RETRY_AFTER` | no |
+| `VISION_RATE_LIMIT_DAY` | 429 + `PerDay` | `HALT` | **yes** |
+| `VISION_BILLING_REQUIRED` | 429 + `limit: 0` | `HALT` | **yes** |
+| `VISION_BAD_CREDENTIALS` | 400/401/403 | `HALT` | **yes** |
+| `VISION_MODEL_UNAVAILABLE` | 404 | `HALT` | **yes** |
+| `VISION_NOT_CONFIGURED` | — | `HALT` | **yes** |
+| `VISION_REQUEST_REJECTED` | 400 (payload) | `REJECT` | no — parks one scan |
+| `VISION_UNKNOWN` | — | `RETRY` | no |
+
+Unrecognised failures classify as `RETRY`, so the system errs toward keeping work rather than
+discarding it.
+
+### 19.3 Dispositions
+
+- **`RETRY`** — backoff and try again.
+- **`RETRY_AFTER`** — same, but not before the server's stated delay.
+- **`HALT`** — stop calling the API; a person must change something. Scans keep being accepted
+  and stored.
+- **`REJECT`** — this one payload will never succeed; park it. Other scans are unaffected.
+
+`REJECT` is the distinction that keeps one bad photo from halting a warehouse.
+
+---
+
+## 20. The UI control channel
+
+Full specification: [`UI_messaging_protocol.md`](UI_messaging_protocol.md). Summary here.
+
+### 20.1 Why SQLite and not JSON files
+
+The Web UI runs as a separate process on the same host. A pair of JSON status files was
+considered and rejected: a single overwritten file is a *state* file, not a message queue, so two
+events inside one poll interval silently lose the first — unacceptable for a system whose
+premise is that nothing is lost. SQLite provides, for free, what a file-based channel would have
+had to reinvent: atomic commits (no torn reads), WAL concurrency (readers never block the
+writer), and real append-only tables with acknowledgement columns.
+
+### 20.2 Tables
+
+| Table | Direction | Purpose |
+|---|---|---|
+| `server_status` | → UI | Single row: state, pause, heartbeat, queue and buffer counters |
+| `server_events` | → UI | Append-only, coalesced by code, acknowledgeable |
+| `ui_commands` | UI → | Append-only with `PENDING→IN_PROGRESS→DONE\|FAILED\|REJECTED` |
+| `message_dictionary` | → UI | Reseeded each boot; code → severity, category, text, hint |
+| `message_translations` | UI-owned | Localised text; **never touched by the reseed** |
+| `vision_settings` | middleware | Active credentials, encrypted |
+| `vision_settings_pending` | UI → | Credential submissions awaiting validation |
+
+### 20.3 Design decisions worth knowing
+
+**Events coalesce.** A repeating condition bumps `occurrences` on the open row instead of
+inserting duplicates — a retry storm cannot flood the table, and no message is ever lost to an
+overwrite. Verified: 5 failing scans in a row produced exactly one open event.
+
+**Liveness is explicit.** `state = 'OK'` from a process that died an hour ago still reads `OK`.
+The heartbeat exists so the UI can tell a healthy server from a corpse; anything older than three
+intervals must render as unreachable, never as OK.
+
+**Pause survives restart.** The pause lives in `control.db`, not memory. A restart cannot
+silently resume hammering an API that still needs a human. Verified.
+
+**Purge is watermark-based.** `FLYWHEEL_DUMPED` requires `exported_through_id`. Between the UI
+starting an export and issuing the purge, new samples arrive; "delete everything" would destroy
+samples that were never exported. A command without a watermark is `REJECTED` and nothing is
+deleted. Verified: a sample captured after the watermark survived the purge.
+
+**Unknown commands are rejected, not ignored** — so a UI/middleware version mismatch is visible
+rather than silent.
+
+### 20.4 Message catalogue
+
+31 codes across `VISION`, `QUEUE`, `FLYWHEEL`, `RENDER`, and `SYSTEM`, each carrying severity,
+category, a `requires_action` flag, default English text, and an operator hint. The UI switches
+on `code` and renders text from the dictionary, so wording and translation change without a UI
+release. The catalogue is reseeded at every boot, so a middleware upgrade that adds codes renders
+correctly against an unchanged UI.
+
+### 20.5 Filesystem requirement
+
+Both processes need read **and write** on `control.db` and its `-wal`/`-shm` siblings — SQLite
+writes to the shared-memory file even for readers, so a read-only account cannot read a WAL
+database at all. The data directory also needs the **setgid bit**: SQLite recreates `-wal`/`-shm`
+at checkpoints, and without setgid the new files inherit the wrong group and lock the other
+process out hours after a working deploy.
+
+---
+
+## 21. Credential management
+
+### 21.1 Why the UI does not write `.env`
+
+`.env` also holds `JWT_SECRET` and `APP_MASTER_PASSWORD`. Granting the web tier write access
+there would turn a UI compromise into a full authentication compromise. Credentials are therefore
+exchanged through the control channel instead.
+
+### 21.2 Validate before adopting
+
+```
+UI inserts into vision_settings_pending  (plaintext, transient)
+        │
+   middleware marks VALIDATING
+        │
+   live probe against the candidate key + model
+        │
+   ┌────┴────────────────────────────────┐
+ success                              failure
+   │                                     │
+ encrypt (AES-256-GCM) into              keep the PREVIOUS credentials
+ vision_settings, erase plaintext,       mark REJECTED with the fault,
+ mark APPLIED, resume, drain queue       raise VISION_SETTINGS_REJECTED
+```
+
+Validating before adopting is the point. Without it a typo takes extraction down and nobody finds
+out until the next scan fails; with it the operator is told immediately and the working key is
+still in force.
+
+### 21.3 At rest
+
+The key is encrypted with AES-256-GCM under a key derived (`scrypt`) from `JWT_SECRET`, which the
+UI does not have — so a reader of `control.db` cannot lift the credential. Only a
+`****last4` fingerprint is exposed for display. Plaintext exists solely in
+`vision_settings_pending.api_key` between submission and validation, and is erased the moment the
+outcome is decided.
+
+> If `JWT_SECRET` is rotated, the stored key becomes undecryptable and must be re-submitted. The
+> middleware logs this explicitly rather than failing obscurely.
+
+### 21.4 Precedence, and the no-fallback rule
+
+```
+UI-managed key (validated)  ──► wins
+        ↓ absent
+GEMINI_API_KEY from .env    ──► bootstrap only
+        ↓ absent
+NONE ──► VISION_NOT_CONFIGURED, vision paused, scans still stored and queued
+```
+
+**There is no fallback to a previously working key.** If the active key is cleared or rejected,
+the middleware waits for a corrected one. Reverting silently would let an operator believe a
+change took effect when it had not — the failure would surface later, somewhere else, as
+mysterious behaviour. Waiting is visible; reverting is not.
+
+An earlier revision did fall back to the boot-time value when the current one was empty. That was
+removed.
+
+---
+
+## 22. Change log
+
+### v1.1 — durability, control channel, credentials
+
+**Zero data loss**
+- Scans are persisted **before** the vision call; a failure can no longer orphan photos.
+- Extraction lifecycle `PENDING`/`COMPLETED`/`PARKED` with unbounded retry and capped backoff.
+- Background drain worker; sweeps at boot and every `QUEUE_DRAIN_MS`.
+- Resuming after a fault clears queued backoff.
+
+**Delivery**
+- Idempotent replay via image digest — a re-submitted scan returns the stored result instead of
+  destroying it and re-billing the API. *(Fixed a real data-destroying bug.)*
+- `GET /api/v1/vision/result/:apparel_id` for recovery without re-uploading photos.
+- Results are never purged on delivery.
+
+**Fault handling**
+- `geminiErrors.ts`: ten stable fault codes, four dispositions, `limit: 0` disambiguation.
+- Retry with exponential backoff, jitter, and optional fallback model.
+- Failed renders retry across nights up to `RENDER_MAX_ATTEMPTS`.
+
+**Control channel**
+- `control.db`: status + heartbeat, coalesced append-only events, command lifecycle.
+- 31-code message catalogue with severities, hints, and a separate translations table.
+- Watermark-based flywheel purge; watermarkless purges rejected.
+- Pause state persisted, surviving restarts.
+
+**Credentials**
+- UI-submitted keys, validated by live probe before adoption, encrypted at rest.
+- No fallback to stale keys; missing keys raise `VISION_NOT_CONFIGURED` and pause.
+
+**Correctness fixes found while building**
+- System instruction and response schema now generate their enum lists from the taxonomy files,
+  so a 253-item `sub_category` list cannot desynchronise prompt from matcher.
+- `tests/` was outside `tsconfig.json`'s include and had never been typechecked; a separate
+  `tsconfig.build.json` now keeps tests out of `dist` while typechecking them.
+- Settings-reload wiring moved out of `index.ts`, where any other entry point silently lost it.
+
+**Test suites**
+
+| Suite | Checks | Needs API |
+|---|---|---|
+| `smoke.ts` | 57 | no |
+| `durability.ts` | 38 | yes (degrades to skips) |
+| `settingsAndDelivery.ts` | 32 | partly (offline paths always run) |
+| `contractQueries.ts` | 30 | no |
+| `errorClassification.ts` | 26 | no |
+| **Total** | **183** | 139 of these need no network |

@@ -3,6 +3,7 @@ import { requireAuth } from '../middleware/auth';
 import { uploadImages } from '../middleware/upload';
 import { ApiError } from '../middleware/errorHandler';
 import { processExtraction, type ExtractRequest } from '../services/visionService';
+import { getScan } from '../db/operationalDb';
 import { env } from '../config/env';
 
 export const visionRouter: Router = Router();
@@ -51,6 +52,49 @@ visionRouter.post('/extract', requireAuth, uploadImages, async (req, res, next) 
     };
 
     res.json(await processExtraction(request));
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * GET /api/v1/vision/result/:apparel_id
+ *
+ * Recovery path for a device that lost the extract response. Results are never
+ * purged on delivery, so this can be called at any later time — and it needs no
+ * photo upload, so recovering costs nothing.
+ *
+ * `extraction_status` tells the client what to do:
+ *   COMPLETED -> `data` is final
+ *   PENDING   -> still queued; poll again later
+ *   PARKED    -> needs human review; do not keep polling
+ */
+visionRouter.get('/result/:apparel_id', requireAuth, (req, res, next) => {
+  try {
+    const apparelId = readString(req.params.apparel_id);
+    if (!apparelId) {
+      throw new ApiError(400, 'MISSING_APPAREL_ID', 'apparel_id is required.');
+    }
+
+    const scan = getScan(apparelId);
+    if (!scan) {
+      throw new ApiError(
+        404,
+        'SCAN_NOT_FOUND',
+        `No scan stored for apparel_id "${apparelId}".`,
+      );
+    }
+
+    res.json({
+      status: 'success',
+      apparel_id: scan.apparel_id,
+      cloned_from: scan.cloned_from,
+      timestamp: scan.timestamp,
+      catalog_image_url: scan.catalog_image_url,
+      extraction_status: scan.extraction_status,
+      extraction_fault_code: scan.extraction_fault_code,
+      data: JSON.parse(scan.raw_json_data) as unknown,
+    });
   } catch (error) {
     next(error);
   }

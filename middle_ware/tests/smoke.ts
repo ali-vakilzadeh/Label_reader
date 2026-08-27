@@ -153,6 +153,7 @@ async function main(): Promise<void> {
     image_paths: JSON.stringify(['/tmp/IMG_890123456789_0.jpg']),
     catalog_image_url: 'http://localhost/catalog/IMG_890123456789.jpg',
     rendering_status: 'PENDING',
+    extraction_status: 'COMPLETED',
   });
 
   const clone = await fetch(`${base}/api/v1/vision/extract`, {

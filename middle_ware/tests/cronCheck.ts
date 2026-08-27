@@ -34,6 +34,7 @@ async function main(): Promise<void> {
     image_paths: '[]',
     catalog_image_url: 'http://localhost/catalog/IMG_CRON-TEST-0001.jpg',
     rendering_status: 'PENDING',
+    extraction_status: 'COMPLETED',
   });
 
   startCronService();
