@@ -15,7 +15,13 @@
  */
 
 export type MessageSeverity = 'INFO' | 'WARNING' | 'CRITICAL';
-export type MessageCategory = 'VISION' | 'FLYWHEEL' | 'RENDER' | 'QUEUE' | 'SYSTEM';
+export type MessageCategory =
+  | 'VISION'
+  | 'FLYWHEEL'
+  | 'RENDER'
+  | 'QUEUE'
+  | 'SYSTEM'
+  | 'USERS';
 
 export interface CatalogueEntry {
   code: string;
@@ -65,6 +71,58 @@ export const MESSAGE_CATALOGUE: CatalogueEntry[] = [
     requiresAction: true,
     defaultText: 'The server could not write to disk.',
     operatorHint: 'Check free space and directory permissions on the data and uploads folders.',
+  },
+
+  // ------------------------------------------------------------------ USERS
+  {
+    code: 'USER_CREATED',
+    severity: 'INFO',
+    category: 'USERS',
+    requiresAction: false,
+    defaultText: 'A new operator account was created.',
+  },
+  {
+    code: 'USER_UPDATED',
+    severity: 'INFO',
+    category: 'USERS',
+    requiresAction: false,
+    defaultText: 'An operator account was updated.',
+  },
+  {
+    code: 'USER_PASSWORD_CHANGED',
+    severity: 'INFO',
+    category: 'USERS',
+    requiresAction: false,
+    defaultText: 'An operator password was changed. Their existing sessions were signed out.',
+  },
+  {
+    code: 'USER_DISABLED',
+    severity: 'WARNING',
+    category: 'USERS',
+    requiresAction: false,
+    defaultText: 'An operator account was disabled and signed out immediately.',
+  },
+  {
+    code: 'USER_ENABLED',
+    severity: 'INFO',
+    category: 'USERS',
+    requiresAction: false,
+    defaultText: 'An operator account was re-enabled.',
+  },
+  {
+    code: 'USER_DELETED',
+    severity: 'WARNING',
+    category: 'USERS',
+    requiresAction: false,
+    defaultText: 'An operator account was deleted. Their scan history is retained.',
+  },
+  {
+    code: 'USER_REQUEST_REJECTED',
+    severity: 'WARNING',
+    category: 'USERS',
+    requiresAction: true,
+    defaultText: 'An operator account change was rejected.',
+    operatorHint: 'Check the reason on the request, correct it, and submit again.',
   },
 
   // ----------------------------------------------------------------- VISION

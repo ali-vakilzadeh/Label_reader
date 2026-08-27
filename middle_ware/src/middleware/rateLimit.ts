@@ -17,10 +17,16 @@ export const apiRateLimiter = rateLimit({
   message: body,
 });
 
-/** Tighter budget on login to blunt master-password brute forcing. */
+/**
+ * Tighter budget on login to blunt password brute forcing — but not so tight
+ * that a legitimate burst trips it. A warehouse fleet sits behind one NAT, so
+ * all ten devices share a source IP; a supervisor resetting passwords makes them
+ * all re-authenticate at once. Passwords are scrypt-hashed, so this ceiling is
+ * still far below anything useful to an attacker.
+ */
 export const loginRateLimiter = rateLimit({
   windowMs: env.rateLimitWindowMs,
-  limit: Math.max(5, Math.floor(env.rateLimitMax / 6)),
+  limit: env.loginRateLimitMax,
   standardHeaders: 'draft-7',
   legacyHeaders: false,
   message: {

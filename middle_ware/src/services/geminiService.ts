@@ -75,10 +75,23 @@ export function credentialSource(): 'UI' | 'ENV' | 'NONE' {
  * Validates a candidate key/model pair against the live API before it is
  * adopted. Returns null on success, or a classified failure.
  */
+export type ProbeResult =
+  /** The credentials work. */
+  | { outcome: 'VALID' }
+  /** The credentials are definitively wrong. */
+  | { outcome: 'INVALID'; fault: string; detail: string }
+  /**
+   * Could not tell — the API was unreachable or busy. NOT a pass: adopting on an
+   * inconclusive probe would defeat the entire point of validating, letting a
+   * typo take extraction down during a momentary outage. The caller retries
+   * later and the previous credentials stay in force meanwhile.
+   */
+  | { outcome: 'INCONCLUSIVE'; fault: string; detail: string };
+
 export async function probeCredentials(
   apiKey: string,
   model: string,
-): Promise<{ ok: true } | { ok: false; fault: string; detail: string }> {
+): Promise<ProbeResult> {
   try {
     const probe = new GoogleGenAI({ apiKey });
     await probe.models.generateContent({
@@ -86,18 +99,20 @@ export async function probeCredentials(
       contents: 'ping',
       config: { maxOutputTokens: 1 },
     });
-    return { ok: true };
+    return { outcome: 'VALID' };
   } catch (error) {
     const classification = classifyGeminiError(error);
-    // A transient outage is not the candidate's fault — do not reject on it.
-    if (
+    const inconclusive =
       classification.fault === 'VISION_TRANSIENT' ||
       classification.fault === 'VISION_NETWORK' ||
-      classification.fault === 'VISION_RATE_LIMIT_MINUTE'
-    ) {
-      return { ok: true };
-    }
-    return { ok: false, fault: classification.fault, detail: classification.detail };
+      classification.fault === 'VISION_UNKNOWN' ||
+      classification.fault === 'VISION_RATE_LIMIT_MINUTE';
+
+    return {
+      outcome: inconclusive ? 'INCONCLUSIVE' : 'INVALID',
+      fault: classification.fault,
+      detail: classification.detail,
+    };
   }
 }
 

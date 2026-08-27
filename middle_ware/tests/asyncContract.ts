@@ -254,11 +254,46 @@ async function main(): Promise<void> {
 
   setServerState('OK', 'OK', null, null);
 
+  section('A missing status row self-heals instead of 500ing');
+  controlDb.exec('DELETE FROM server_status');
+  const afterWipe = await post(form('ASYNC-NOSTATUS', photo));
+  check('submission still succeeds', afterWipe.status === 202, afterWipe.status);
+  const statusRow = controlDb.prepare('SELECT COUNT(*) AS n FROM server_status').get() as {
+    n: number;
+  };
+  check('status row was recreated', statusRow.n === 1, statusRow);
+
   // ----------------------------------------------------------------- health
   section('§4.5 health advertises the contract revision');
   const health = (await (await fetch(`${base}/health`)).json()) as Record<string, any>;
   check('api_contract is 1.1', health.api_contract === '1.1', health.api_contract);
   check('gemini_ready reported', typeof health.gemini_ready === 'boolean');
+
+  // --------------------------------------------------- safety hardening ---
+  // Runs LAST: closing control.db cannot be undone in-process.
+  //
+  // The polling hints are read AFTER the scan is committed. If that read fails,
+  // the scan is already safe — so the response must still be 2xx. A 5xx here
+  // would tell the device to resend something the server already holds, which is
+  // exactly what api_contract.md §2 forbids.
+  section('Advisory hints can fail without breaking the storage invariant');
+  controlDb.close();
+
+  const duringFailure = await post(form('ASYNC-HINTFAIL', photo));
+  const hintBody = (await duringFailure.json()) as Record<string, any>;
+  check('still 202 when hints are unavailable', duringFailure.status === 202, duringFailure.status);
+  check(
+    'still reports PENDING_AI',
+    hintBody.processing_status === 'PENDING_AI',
+    hintBody.processing_status,
+  );
+  check(
+    'degrades to a conservative poll interval',
+    hintBody.retry_after_seconds === env.pollRetryMaxSeconds,
+    hintBody.retry_after_seconds,
+  );
+  const hintStored = await fetch(`${base}/api/v1/vision/result/ASYNC-HINTFAIL`, { headers: auth });
+  check('and the scan really was stored', hintStored.status === 200, hintStored.status);
 
   await new Promise<void>((r) => server.close(() => r()));
   console.log(`\n${passed} passed, ${failed} failed`);

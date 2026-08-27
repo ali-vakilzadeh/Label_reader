@@ -1,6 +1,7 @@
 import type { NextFunction, Request, Response } from 'express';
 import jwt from 'jsonwebtoken';
 import { env } from '../config/env';
+import { tokenStillValid } from '../db/appUsers';
 import type { AuthTokenPayload } from '../types';
 import { ApiError } from './errorHandler';
 
@@ -30,7 +31,26 @@ export function requireAuth(req: Request, _res: Response, next: NextFunction): v
 
   const token = header.slice('Bearer '.length).trim();
   try {
-    req.auth = jwt.verify(token, env.jwtSecret) as AuthTokenPayload;
+    const payload = jwt.verify(token, env.jwtSecret) as AuthTokenPayload;
+
+    // A 30-day token would otherwise outlive a disable or a password change by
+    // up to a month, making "disable this operator" cosmetic. Every request
+    // re-checks the account against live state.
+    const standing = tokenStillValid(payload.username, payload.iat);
+    if (!standing.valid) {
+      next(
+        new ApiError(
+          401,
+          standing.reason === 'DISABLED' ? 'ACCOUNT_DISABLED' : 'TOKEN_REVOKED',
+          standing.reason === 'DISABLED'
+            ? 'This operator account has been disabled. Contact a supervisor.'
+            : 'Session ended because the account credentials changed. Please log in again.',
+        ),
+      );
+      return;
+    }
+
+    req.auth = payload;
     next();
   } catch (error) {
     const expired = error instanceof jwt.TokenExpiredError;

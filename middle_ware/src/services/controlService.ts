@@ -26,6 +26,7 @@ import {
   markSettingsInvalid,
   takePendingSettings,
 } from '../db/visionSettings';
+import { processPendingUserRequests } from './userService';
 import { logger } from '../utils/logger';
 import type { GeminiClassification } from './geminiErrors';
 
@@ -305,7 +306,21 @@ export async function processPendingSettings(): Promise<void> {
     try {
       const probe = await probeCredentials(apiKey, model);
 
-      if (!probe.ok) {
+      if (probe.outcome === 'INCONCLUSIVE') {
+        // Neither adopt nor reject. The candidate stays PENDING and is retried on
+        // a later poll; the credentials currently in force are untouched.
+        markPending(
+          pending.id,
+          'PENDING',
+          `Could not verify yet (${probe.fault}); will retry automatically.`,
+        );
+        logger.warn(
+          `Credential validation inconclusive (${probe.fault}); leaving submission queued.`,
+        );
+        continue;
+      }
+
+      if (probe.outcome === 'INVALID') {
         markSettingsInvalid(probe.detail);
         markPending(pending.id, 'REJECTED', `${probe.fault}: ${probe.detail}`);
         raiseEvent('VISION_SETTINGS_REJECTED', probe.detail, { fault: probe.fault });
@@ -404,6 +419,7 @@ export function startControlService(): void {
   heartbeatTimer = setInterval(publishHeartbeat, env.controlHeartbeatMs);
   commandTimer = setInterval(() => {
     processPendingCommands();
+    processPendingUserRequests();
     void processPendingSettings();
   }, env.controlPollMs);
   heartbeatTimer.unref();

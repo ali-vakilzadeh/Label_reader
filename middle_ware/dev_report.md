@@ -4,9 +4,9 @@
 **Location:** `/middle_ware`
 **Stack:** Node.js 20 LTS · TypeScript 5.8 · Express 4.21 · better-sqlite3 11 · @google/genai 1.x
 **Status:** Feature-complete against `api_contract.md` and `server_specification.json`, plus a
-durable intake queue and a UI control channel. Build and typecheck clean; **139 checks pass with
-no network access**, rising to ~183 when a live API key with quota is available. The vision path
-is verified against the live API with real photos.
+durable intake queue, a UI control channel, and a fully asynchronous client protocol
+(`api_contract.md` **v1.1**). Build and typecheck clean; **215 checks pass with no network
+access**. The vision path is verified against the live API with real photos.
 
 **Companion document:** [`UI_messaging_protocol.md`](UI_messaging_protocol.md) — the contract the
 Web UI codes against.
@@ -36,7 +36,8 @@ Web UI codes against.
 19. [Fault classification](#19-fault-classification)
 20. [The UI control channel](#20-the-ui-control-channel)
 21. [Credential management](#21-credential-management)
-22. [Change log](#22-change-log)
+22. [Asynchronous client protocol (v1.1)](#22-asynchronous-client-protocol-v11)
+23. [Change log](#23-change-log)
 
 ---
 
@@ -536,6 +537,9 @@ Request `{ "password": "...", "username": "emp_402" }` →
 
 ### `POST /api/v1/vision/extract` — Bearer
 
+> **v1.1:** returns **202 Accepted** and never waits for the AI. See
+> [§22](#22-asynchronous-client-protocol-v11) and [`api_contract.md`](api_contract.md).
+
 `multipart/form-data`:
 
 | Field | Type | Required | Notes |
@@ -562,10 +566,12 @@ wrong, these routes return **404**, not 401 — a 401 would confirm the endpoint
 
 ### `GET /api/v1/vision/result/:apparel_id` — Bearer
 
-Recovery path for a device that lost the extract response. Uploads nothing; results are never
-purged, so it can be called at any later time. Returns the contract payload plus
-`extraction_status` (`COMPLETED` / `PENDING` / `PARKED`) and `extraction_fault_code`.
-See [§18.3](#183-what-happens-when-a-device-does-not-receive-the-result).
+Recovery path for a device that lost the extract response, and the normal way results are
+collected under v1.1. Uploads nothing; results are never purged, so it can be called at any later
+time. Returns the contract payload plus `processing_status`
+(`PENDING_AI` / `READY_TO_CONFIRM` / `NEEDS_ATTENTION`) and `attention_reason`.
+A batch form, `GET /api/v1/vision/results?ids=…`, accepts up to 100 ids.
+See [§22.5](#225-result-retrieval).
 
 ### `GET /catalog/IMG_<apparel_id>.jpg` — no auth
 
@@ -590,7 +596,7 @@ Static rendered shots, `Cache-Control: max-age=3600`.
 | `CONFIRM_FAILED` | 500 | Ground-truth write did not persist |
 | `VISION_UNAVAILABLE` | 503 | `GEMINI_API_KEY` not configured |
 | `VISION_EXTRACTION_FAILED` | 502 | Gemini failed after all retries |
-| `VISION_QUEUED` | 503 | Stored and queued; extraction deferred (paused, unconfigured, or transient failure) |
+| ~~`VISION_QUEUED`~~ | ~~503~~ | **Removed in v1.1** — a stored scan now returns `202` with `processing_status: PENDING_AI` |
 | `SCAN_NOT_FOUND` | 404 | No scan stored for that `apparel_id` |
 | `RATE_LIMITED` | 429 | Per-IP budget exceeded |
 | `INTERNAL_ERROR` | 500 | Unhandled fault |
@@ -1060,12 +1066,14 @@ Then `npm run render:now`.
 
 | Command | Checks | Scope | Network |
 | --- | --- | --- | --- |
-| `npm test` | 57 | Every endpoint, both auth paths, cloning, weights, fuzzy snapping, screening, ring buffer, Armenian export | none |
+| `npm test` | 58 | Every endpoint, both auth paths, cloning, weights, fuzzy snapping, screening, ring buffer, Armenian export | none |
 | `npm run test:errors` | 26 | Fault classification against real captured Gemini payloads | none |
 | `npm run test:contract` | 30 | Every SQL statement published to the UI, executed as a second process | none |
-| `npm run test:settings` | 32 | Credential submission/validation/encryption, replay, result recovery | partial |
-| `npm run test:durability` | 38 | The zero-data-loss guarantee end to end | yes |
-| `npm run test:all` | 139 | typecheck + the four suites that need no live API | none |
+| `npm run test:settings` | 33 | Credential submission/validation/encryption, replay, result recovery | partial |
+| `npm run test:durability` | 38 | The zero-data-loss guarantee end to end | yes (degrades to skips) |
+| `npm run test:async` | 68 | api_contract.md v1.1 end to end, deliberately with no API key | none |
+| `npm run test:users` | 46 | Operator accounts, revocation, soft delete, migration | none |
+| `npm run test:all` | 253 | typecheck + all six offline suites | none |
 | `npm run test:live -- <images...>` | — | Real Gemini call, full pipeline, persistence and export report | Gemini |
 | `npx tsx tests/cronCheck.ts` | — | Cron validity, tick reaches the job, failure marking | none |
 | `npm run typecheck` | — | `tsc --noEmit`, strict, **including `tests/`** | none |
@@ -1350,7 +1358,8 @@ no cleanup job that removes results.
 The device has two independent recovery paths:
 
 **Path 1 — re-submit (what the existing app already does).** The Android client keeps its scan
-queued until it gets a response, and retries. That retry is now **idempotent**:
+queued until it gets a response, and retries. That retry is **idempotent** (see also
+[§22.7](#227-idempotency)):
 
 ```
 POST /api/v1/vision/extract  (same apparel_id, same photos)
@@ -1550,13 +1559,22 @@ UI inserts into vision_settings_pending  (plaintext, transient)
         │
    live probe against the candidate key + model
         │
-   ┌────┴────────────────────────────────┐
- success                              failure
-   │                                     │
- encrypt (AES-256-GCM) into              keep the PREVIOUS credentials
- vision_settings, erase plaintext,       mark REJECTED with the fault,
- mark APPLIED, resume, drain queue       raise VISION_SETTINGS_REJECTED
+   ┌────┴──────────────┬──────────────────────────┐
+ VALID              INVALID                  INCONCLUSIVE
+   │                   │                           │
+ encrypt into      keep PREVIOUS creds,      keep PREVIOUS creds,
+ vision_settings,  mark REJECTED,            stay PENDING,
+ erase plaintext,  raise                     retry on a later poll
+ mark APPLIED,     VISION_SETTINGS_REJECTED
+ resume + drain
 ```
+
+**Three outcomes, not two.** An early revision treated "the API was unreachable" as a pass, on
+the reasoning that an outage is not the candidate's fault. That quietly inverted the guarantee:
+a network blip during validation would *adopt* an unverified key and take extraction down — the
+exact failure validation exists to prevent. An unreachable API now yields `INCONCLUSIVE`, which
+adopts nothing and rejects nothing; the submission stays queued and the credentials already in
+force keep working.
 
 Validating before adopting is the point. Without it a typo takes extraction down and nobody finds
 out until the next scan fails; with it the operator is told immediately and the working key is
@@ -1593,9 +1611,170 @@ removed.
 
 ---
 
-## 22. Change log
+## 22. Asynchronous client protocol (v1.1)
 
-### v1.1 — durability, control channel, credentials
+Full specification: [`api_contract.md`](api_contract.md). Rationale and mechanics here.
+
+### 22.1 Why it changed
+
+v1.0 had the device wait while the server called Gemini. Once extraction became a durable queue
+([§17](#17-durability-and-the-intake-queue)), that produced a contradiction: a scan could be
+safely stored but not yet extracted, and the only way to say so was
+`503 VISION_QUEUED` — a *failure* code for a *successful* store.
+
+The consequence was concrete. The Android client marks `5xx` as `status = 3 (Failed)`, so the
+operator saw a red error for a scan that was safe and progressing, and the device could re-upload
+eight photos the server already held.
+
+The app was never the obstacle. Its own specification already describes "**asynchronous** Gemini
+Vision AI extraction", stores captures at `STATUS_PENDING_VISION` before transmitting, and syncs
+in batches. The queue matched the app's design; only the wire vocabulary was missing.
+
+### 22.2 The storage invariant
+
+One rule governs all client retry behaviour:
+
+| Response | Meaning | Client action |
+|---|---|---|
+| **2xx** | The server **has** the scan | Never resend images; poll |
+| **4xx** | Malformed; nothing stored | Fix the request |
+| **5xx** | The server does **not** have it | Resend everything |
+
+This is the property the whole protocol rests on, and it is asserted directly in
+`tests/asyncContract.ts` — including the hardening case in [§22.6](#226-protecting-the-invariant).
+
+### 22.3 Pure async
+
+`POST /vision/extract` no longer calls the vision API at all. It stores, nudges the queue, and
+returns **202** — measured well under 3 s with no key configured.
+
+```
+POST /vision/extract
+   │
+   ├─ digest matches an existing scan? ──► replay its stored state
+   ├─ cloned_from set? ────────────────► copy parent, READY_TO_CONFIRM
+   └─ otherwise ───────────────────────► persist, queue, PENDING_AI
+```
+
+Every accepted submission answers 202, clones and replays included. The client branches on
+`processing_status`, never on the status code — one HTTP branch, one state switch.
+
+| `processing_status` | Server state | Android `status` |
+|---|---|---|
+| `PENDING_AI` | `PENDING` | 0 Pending AI Vision |
+| `READY_TO_CONFIRM` | `COMPLETED` | 1 Extracted / In Review |
+| `NEEDS_ATTENTION` | `PARKED` | 3 Failed |
+
+That maps onto the app's **existing** enum, so no client data-model change was required.
+
+Because the submit path never contacts Gemini, it cannot report an extraction failure — every
+extraction outcome is discovered by polling. Submit therefore has exactly two outcomes: *stored*
+or *not stored*.
+
+### 22.4 Polling hints
+
+Each response carries what the client needs to schedule its next call:
+
+```json
+"queue_depth": 12,
+"estimated_wait_seconds": 60,
+"retry_after_seconds": 60,
+"blocking_fault": null
+```
+
+`estimated_wait_seconds` is `queue_depth × VISION_SECONDS_PER_ITEM` (default 5 s) — for operator
+display. `retry_after_seconds` is the machine hint, clamped to `POLL_RETRY_MIN/MAX_SECONDS`
+(5–120) so devices neither hammer the server nor sleep through a fast queue.
+
+**When processing is paused, `estimated_wait_seconds` is `null`, not a number.** The wait then
+depends on a person fixing billing or credentials, so any figure would be a guess the operator
+would plan around. `blocking_fault` names the cause instead, and polling drops to the ceiling.
+
+### 22.5 Result retrieval
+
+| Endpoint | Purpose |
+|---|---|
+| `GET /vision/result/:apparel_id` | One scan |
+| `GET /vision/results?ids=a,b,c` | Up to 100 at once |
+
+The batch form exists for the realistic case: after an outage a device may be waiting on dozens
+of scans, and polling them individually would be one request each. Unknown ids come back in
+`not_found` rather than failing the batch, so one stale id cannot block the rest.
+
+Neither endpoint uploads anything, and results are never purged — recovery is cheap enough to do
+routinely, and works after an app reinstall because `apparel_id` is the barcode.
+
+### 22.6 Protecting the invariant
+
+The polling hints are read from `control.db` **after** the scan is committed. A failure there
+would have produced a `5xx` for a scan that was already stored — telling the device to resend
+something the server held, in direct violation of [§22.2](#222-the-storage-invariant).
+
+Two defences, both tested:
+
+- **`queueSnapshot()` never throws.** On any failure it logs and returns conservative hints
+  (`depth 0`, no estimate, ceiling poll interval). The response stays 202.
+- **`readStatus()` self-heals.** The singleton status row is seeded with the schema; if it is
+  ever missing, the read recreates it rather than returning `undefined` to a caller that will
+  dereference it.
+
+The test closes `control.db` mid-run and asserts the submission still returns 202 and the scan is
+still retrievable.
+
+### 22.7 Idempotency
+
+Re-submitting the same `apparel_id` with byte-identical photos replays the stored state — the
+digest comparison happens before anything else, so it costs no API call and cannot overwrite a
+finished extraction. Different photos for the same id are treated as a genuine re-scan and queue
+fresh work.
+
+A client unsure whether a submission landed can simply resend.
+
+---
+
+## 23. Change log
+
+### v1.1 — asynchronous client protocol
+
+**api_contract.md v1.1**
+- `POST /vision/extract` is now **pure async**: stores, queues, returns `202`, never calls the AI.
+- `processing_status` (`PENDING_AI` / `READY_TO_CONFIRM` / `NEEDS_ATTENTION`) on every scan
+  response, mapping 1:1 onto the Android client's existing Room status enum.
+- Polling hints derived from real queue depth: `queue_depth`, `estimated_wait_seconds`,
+  `retry_after_seconds`, `blocking_fault`. No estimate is invented while paused.
+- `GET /vision/results?ids=…` batch retrieval, up to 100 ids.
+- `503 VISION_QUEUED` removed — it reported a *failure* for a *successful* store and caused the
+  client to resend photos the server already held.
+- The storage invariant (2xx = stored, 5xx = not stored) is now stated and tested.
+
+**Operator accounts**
+- `app_users` in `control.db`: per-operator logins created, disabled and deleted from the Web UI.
+- Passwords hashed with scrypt and a per-user salt; plaintext exists only in the request row and
+  is erased on resolution. `app_users_public` view keeps hashes out of the UI's reach.
+- **Revocation is immediate.** A 30-day JWT would otherwise outlive a disable by a month, making
+  it cosmetic. Each account carries a `tokens_valid_from` stamp bumped by disable, delete and
+  password change; every authenticated request is checked against it.
+- Delete is a *soft* delete — scans carry the operator's username for attribution and are kept
+  indefinitely, so removing the row would orphan the audit trail.
+- The last active operator cannot be disabled or deleted.
+- Shared `APP_MASTER_PASSWORD` still works for usernames without an account, so the fleet keeps
+  running during migration; `ALLOW_MASTER_PASSWORD_FALLBACK=false` closes it afterwards.
+
+**Safety hardening**
+- Account standing is cached in memory, so an unreachable `control.db` cannot 401 the entire
+  fleet. Revocations issued before the outage stay enforced; only one issued during it is missed.
+- `LOGIN_RATE_LIMIT_MAX` (default 30/min per IP) replaces a hard-coded 10 — a warehouse fleet
+  shares one NAT, so a password reset made all ten devices re-authenticate into the old ceiling.
+- Credential validation is three-state: an unreachable API is `INCONCLUSIVE`, never a pass.
+  Previously a network blip during validation could adopt an unverified key.
+- `queueSnapshot()` cannot throw; advisory hints degrade instead of turning a stored scan into a
+  `5xx`.
+- `readStatus()` self-heals a missing status row; the row is seeded with the schema rather than
+  by start-up, closing a window where an early request produced a 500.
+- Request path wakes the drain worker through a dependency-free signal module, removing a
+  latent import cycle. Nudges are debounced so a batch of scans causes one sweep.
+
+### v1.0.x — durability, control channel, credentials
 
 **Zero data loss**
 - Scans are persisted **before** the vision call; a failure can no longer orphan photos.
@@ -1640,4 +1819,4 @@ removed.
 | `settingsAndDelivery.ts` | 32 | partly (offline paths always run) |
 | `contractQueries.ts` | 30 | no |
 | `errorClassification.ts` | 26 | no |
-| **Total** | **183** | 139 of these need no network |
+| **Total** | **253** | all pass with no network |

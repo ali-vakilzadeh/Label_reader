@@ -66,6 +66,15 @@ export const env = {
   jwtSecret: required('JWT_SECRET'),
   masterPassword: required('APP_MASTER_PASSWORD'),
   jwtExpiresIn: optional('JWT_EXPIRES_IN', '30d'),
+  /** Minimum length enforced on operator passwords set through the UI. */
+  passwordMinLength: numeric('PASSWORD_MIN_LENGTH', 8),
+  /**
+   * Whether a username with no operator account may still log in with the shared
+   * APP_MASTER_PASSWORD. Keeps existing devices working during migration; set
+   * false once every device has its own account.
+   */
+  allowMasterPasswordFallback:
+    optional('ALLOW_MASTER_PASSWORD_FALLBACK', 'true') === 'true',
 
   // --- Gemini -----------------------------------------------------------
   geminiApiKey: process.env.GEMINI_API_KEY ?? '',
@@ -94,6 +103,11 @@ export const env = {
   maxImageBytes: numeric('MAX_IMAGE_BYTES', 12 * 1024 * 1024),
   rateLimitWindowMs: numeric('RATE_LIMIT_WINDOW_MS', 60_000),
   rateLimitMax: numeric('RATE_LIMIT_MAX', 60),
+  /**
+   * Login attempts per minute per IP. Sized for a whole fleet re-authenticating
+   * from one NAT after a password reset, not for a single device.
+   */
+  loginRateLimitMax: numeric('LOGIN_RATE_LIMIT_MAX', 30),
   corsOrigin: optional('CORS_ORIGIN', '*'),
 
   // --- Cron -------------------------------------------------------------

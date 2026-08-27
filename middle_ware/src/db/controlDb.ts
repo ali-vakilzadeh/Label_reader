@@ -217,7 +217,19 @@ export function initialiseStatus(): ServerStatusRow {
 // startControlService() reads a valid row instead of crashing on undefined.
 initStatusStmt.run({ now: Date.now(), capacity: env.flywheelMaxRecords });
 
+/**
+ * Self-healing read. The singleton row is seeded with the schema, but it is read
+ * on the scan-submission path, so a missing row must never be able to crash a
+ * request. If it has somehow gone (manual surgery, a half-restored backup), it
+ * is recreated rather than returning undefined to a caller that will dereference
+ * it.
+ */
 export function readStatus(): ServerStatusRow {
+  const row = readStatusStmt.get() as ServerStatusRow | undefined;
+  if (row) return row;
+
+  logger.warn('server_status row was missing; recreating it.');
+  initStatusStmt.run({ now: Date.now(), capacity: env.flywheelMaxRecords });
   return readStatusStmt.get() as ServerStatusRow;
 }
 

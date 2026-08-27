@@ -84,7 +84,15 @@ new scan.
 
 ### 4.1 Authentication — `POST /api/v1/auth/login`
 
-Unchanged from v1.0.
+Unchanged in shape from v1.0. Two things to know about behaviour:
+
+- Operators may now have **individual accounts** managed from the Web UI. A username that has an
+  account is validated against it; a username that does not falls back to the shared
+  `APP_MASTER_PASSWORD` while the fleet is being migrated.
+- A token can be **revoked before it expires**. If an operator is disabled or their password is
+  changed, their next authenticated request returns `401 ACCOUNT_DISABLED` or
+  `401 TOKEN_REVOKED`. Treat both as "log in again"; only `ACCOUNT_DISABLED` should tell the
+  operator to find a supervisor.
 
 **Request** (`application/json`):
 
@@ -316,6 +324,8 @@ Branch on `error_code`, never on `message`.
 | `MISSING_USERNAME` | 400 | No | Fix request |
 | `INVALID_IMAGE_PAYLOAD` | 400 | No | No images, unsupported type, >8 files, or a file >12 MB |
 | `INVALID_CREDENTIALS` | 400 / 401 | No | Re-prompt for the device password |
+| `ACCOUNT_DISABLED` | 401 | No | This operator account was disabled. Show "contact a supervisor" — retrying will not help |
+| `TOKEN_REVOKED` | 401 | No | The account password changed. Prompt for login again |
 | `UNAUTHORIZED` | 401 | No | Missing/malformed `Authorization` header |
 | `INVALID_TOKEN` | 401 | No | Re-authenticate |
 | `TOKEN_EXPIRED` | 401 | No | Re-authenticate |
@@ -389,6 +399,13 @@ server retains its own copies regardless.
 | Result retrieval | *(none)* | `GET /vision/result/:id`, `GET /vision/results` |
 | Pipeline state | *(none)* | `processing_status` on every scan response |
 | Poll timing | *(none)* | `retry_after_seconds`, `estimated_wait_seconds`, `queue_depth` |
+
+### Accounts and revocation
+
+Handle `401` on **any** endpoint, not just login: a supervisor can disable an operator or reset a
+password at any moment, and the device finds out on its next request. Clear the stored token and
+return to the login screen. Queued scans stay in Room and upload after the next successful login —
+nothing is lost by a revocation.
 
 ### Client changes required
 

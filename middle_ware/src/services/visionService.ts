@@ -268,6 +268,24 @@ export interface QueueSnapshot {
 }
 
 export function queueSnapshot(): QueueSnapshot {
+  try {
+    return readQueueSnapshot();
+  } catch (error) {
+    // These are advisory display hints, read AFTER the scan is already committed.
+    // Letting them throw would turn a stored scan into a 5xx, and the contract
+    // says 5xx means "not stored, resend" — so a hint failure must never
+    // propagate. Degrade to a conservative poll interval instead.
+    logger.error('Queue snapshot unavailable; returning conservative hints.', error);
+    return {
+      depth: 0,
+      estimatedWaitSeconds: null,
+      retryAfterSeconds: env.pollRetryMaxSeconds,
+      blockingFault: null,
+    };
+  }
+}
+
+function readQueueSnapshot(): QueueSnapshot {
   const depth = extractionCounts().pending;
   const paused = isVisionPaused();
   const blockingFault = paused ? activeFault() : null;

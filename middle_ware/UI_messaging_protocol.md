@@ -1,6 +1,16 @@
 # UI Messaging Protocol
 
-**Version 1.1** · Transport: shared SQLite (`control.db`) · Status: implemented, tested against a live second process
+**Version 1.3** · Transport: shared SQLite (`control.db`) · Middleware 1.1.0 · Status: implemented, tested against a live second process
+
+> **What changed in 1.3:** operator account management — the UI can now create, disable and
+> delete the logins used by the Android devices. See
+> [§8](#8-managing-operator-accounts). Two new tables (`app_users_public`, `app_user_requests`)
+> and seven `USER_*` message codes; nothing existing changed.
+>
+> **What changed in 1.2:** the middleware now processes every scan asynchronously
+> (`api_contract.md` v1.1). A non-zero extraction queue is the **normal steady state**, not a
+> symptom — see [§3.1](#31-reading-the-queue-counters-under-async-processing). Nothing about the
+> tables, codes, or commands changed.
 
 The contract between the **middleware** (Node service, owns the vision pipeline) and the
 **Web UI** (separate process, same host). Neither calls the other. All state passes through one
@@ -20,11 +30,12 @@ SQLite file.
 5. [Message code reference](#5-message-code-reference)
 6. [Sending commands](#6-sending-commands)
 7. [Changing the API key](#7-changing-the-api-key)
-8. [Translations](#8-translations)
-9. [Rendering guide](#9-rendering-guide)
-10. [Guarantees](#10-guarantees)
-11. [Reference queries](#11-reference-queries)
-12. [Integration checklist](#12-integration-checklist)
+8. [Managing operator accounts](#8-managing-operator-accounts)
+9. [Translations](#9-translations)
+10. [Rendering guide](#10-rendering-guide)
+11. [Guarantees](#11-guarantees)
+12. [Reference queries](#12-reference-queries)
+13. [Integration checklist](#13-integration-checklist)
 
 ---
 
@@ -88,9 +99,13 @@ Reads never block the middleware. Poll as often as you like.
 | `vision_settings_pending` | UI → middleware | Credential submissions awaiting validation |
 | `message_dictionary` | middleware → UI | Reseeded each boot; code → text/severity |
 | `message_translations` | UI-owned | Localised text; survives upgrades |
+| `app_users_public` | middleware → UI | **View.** Operator accounts, credentials excluded |
+| `app_user_requests` | UI → middleware | Account changes awaiting validation |
 
-The UI **writes** only `ui_commands`, `vision_settings_pending`, `message_translations`, and the
-`acknowledged_*` columns of `server_events`. Everything else is read-only to the UI.
+The UI **writes** only `ui_commands`, `vision_settings_pending`, `app_user_requests`,
+`message_translations`, and the `acknowledged_*` columns of `server_events`. Everything else is
+read-only to the UI — and `app_users` should never be read directly; use the
+`app_users_public` view, which cannot expose a password hash.
 
 ---
 
@@ -112,6 +127,22 @@ SELECT * FROM server_status WHERE id = 1;
 | `queue_pending` | int | Scans stored, awaiting extraction |
 | `queue_parked` | int | Scans needing human review |
 | `flywheel_records` / `flywheel_capacity` | int | Training buffer occupancy |
+
+### 3.1 Reading the queue counters under async processing
+
+Since middleware 1.1.0, **every scan is queued before extraction**. A device uploads, the server
+stores it and answers immediately, and a background worker performs the AI call. So:
+
+| Counter | Normal | Worth surfacing |
+|---|---|---|
+| `queue_pending` | **Non-zero is healthy.** Scans flow in and drain out continuously | Sustained growth, or non-zero while `vision_state = 'PAUSED'` |
+| `queue_parked` | **Zero** | Any non-zero value — these need a person |
+
+Do **not** render `queue_pending > 0` as a fault. It means the pipeline is working. The signal
+that matters is whether it is *draining*: sample it across two polls and compare.
+
+`queue_parked` is different — a parked scan is stored and safe, but it will never extract without
+someone re-photographing the item. That one always deserves attention.
 
 ### Liveness — check this before anything else
 
@@ -186,7 +217,7 @@ Everything else self-heals.
 
 | Code | Sev | Action | Meaning |
 |---|---|---|---|
-| `QUEUE_BACKLOG` | WARN | – | Scans awaiting extraction; drains automatically |
+| `QUEUE_BACKLOG` | WARN | – | Backlog above the configured threshold. Some queue is normal; this fires only when it is unusually deep |
 | `QUEUE_PARKED_ITEMS` | WARN | ✔ | Scans need review — **nothing lost**, photos and records on server |
 | `QUEUE_DRAINED` | INFO | – | Backlog cleared |
 
@@ -202,6 +233,18 @@ Everything else self-heals.
 
 Only training samples rotate. **Operational records are never affected** — say so in the UI, or
 operators will think they are losing inventory data.
+
+### USERS
+
+| Code | Sev | Action | Meaning |
+|---|---|---|---|
+| `USER_CREATED` | INFO | – | A new operator account was created |
+| `USER_UPDATED` | INFO | – | An operator account was updated |
+| `USER_PASSWORD_CHANGED` | INFO | – | Password changed; that operator's sessions were signed out |
+| `USER_DISABLED` | WARN | – | Account disabled and signed out immediately |
+| `USER_ENABLED` | INFO | – | Account re-enabled |
+| `USER_DELETED` | WARN | – | Account deleted; scan history retained |
+| `USER_REQUEST_REJECTED` | WARN | ✔ | An account change was rejected — see `result_detail` on the request |
 
 ### RENDER / SYSTEM
 
@@ -308,10 +351,14 @@ PENDING ──► VALIDATING ──► APPLIED | REJECTED
 
 | Status | Meaning |
 |---|---|
-| `PENDING` | Not yet picked up |
+| `PENDING` | Not yet picked up — **or** a probe was inconclusive and it will be retried. `result_detail` says which |
 | `VALIDATING` | Live probe in flight |
 | `APPLIED` | Validated, encrypted, adopted; vision resumed and queue draining |
-| `REJECTED` | Probe failed. **Previous credentials remain active.** `result_detail` names the fault |
+| `REJECTED` | Probe returned a definitive failure. **Previous credentials remain active.** `result_detail` names the fault |
+
+**A submission can return to `PENDING`.** If the API could not be reached, the middleware neither
+adopts nor rejects — an unverified key is never put into service. Keep polling; show it as
+"verifying…" rather than as an error. It resolves once the API is reachable again.
 
 On `APPLIED` the middleware also clears `VISION_NOT_CONFIGURED` and
 `VISION_SETTINGS_REJECTED`, raises `VISION_SETTINGS_APPLIED`, and resumes automatically —
@@ -347,7 +394,122 @@ scans keep being accepted and queued; nothing is lost.
 
 ---
 
-## 8. Translations
+## 8. Managing operator accounts
+
+The UI creates, disables and deletes the operator logins used by the Android devices. Same
+handoff shape as credentials ([§7](#7-changing-the-api-key)): the UI submits a request, the
+middleware validates it, hashes any password, and reports the outcome.
+
+**The UI never stores or displays a password.** Plaintext exists only in
+`app_user_requests.password`, between submission and processing, and is erased the moment the
+request resolves.
+
+### Listing operators
+
+Read the **view**, never `app_users` directly — the view excludes credential columns and
+soft-deleted accounts by construction:
+
+```sql
+SELECT username, display_name, status, created_at, created_by,
+       updated_at, updated_by, last_login_at
+FROM app_users_public
+ORDER BY username;
+```
+
+| Column | Notes |
+|---|---|
+| `username` | Login name. Immutable once created |
+| `display_name` | Free text for the UI; may be `NULL` |
+| `status` | `ACTIVE` or `DISABLED` (deleted accounts are not in this view) |
+| `last_login_at` | Epoch ms, or `NULL` if never used |
+| `created_by` / `updated_by` | Whoever submitted the change, e.g. `ui:admin` |
+
+### Submitting a change
+
+```sql
+INSERT INTO app_user_requests
+  (action, username, password, display_name, submitted_at, submitted_by, status)
+VALUES (:action, :username, :password, :display_name, unixepoch() * 1000, 'ui:admin', 'PENDING');
+-- keep last_insert_rowid() to poll
+```
+
+| `action` | `password` | `display_name` | Effect |
+|---|---|---|---|
+| `CREATE` | **required** | optional | New operator, `ACTIVE`. Restores a deleted account if the name was used before |
+| `SET_PASSWORD` | **required** | – | New password. **Signs the operator out everywhere** |
+| `DISABLE` | – | – | Blocks login and **signs them out immediately** |
+| `ENABLE` | – | – | Restores a disabled account |
+| `DELETE` | – | – | Soft delete: blocks login, signs out, hides from the list, keeps the record |
+| `RENAME` | – | **required** | Changes `display_name` only |
+
+### Polling the outcome
+
+```sql
+SELECT status, result_detail, resolved_at FROM app_user_requests WHERE id = :id;
+```
+
+```
+PENDING ──► APPLIED | REJECTED
+```
+
+`result_detail` always carries a human-readable outcome — show it verbatim on rejection. Typical
+rejections:
+
+- `Username must be 3-64 characters, letters/digits/dot/underscore/hyphen only.`
+- `Password must be at least 8 characters.`
+- `An operator named "x" already exists.`
+- `No operator named "x".`
+- `Refusing to disable the last active operator.`
+
+### Rules the middleware enforces
+
+**Immediate sign-out.** Device tokens last 30 days. `DISABLE`, `DELETE` and `SET_PASSWORD` all
+stamp a revocation point on the account, and every authenticated request is checked against it —
+so a disabled operator is locked out on their **next request**, not in a month. The device
+receives `401 ACCOUNT_DISABLED` or `401 TOKEN_REVOKED`; both mean "log in again".
+
+**Delete is a soft delete.** Scans carry the operator's username for attribution, and those
+records are kept indefinitely. Hard-deleting the account would orphan that audit trail. The row
+stays, hidden from `app_users_public`; recreating the same username restores it with its history.
+
+**The last active operator cannot be removed.** `DISABLE` and `DELETE` are rejected when they
+would leave no active account, so the UI cannot lock the whole fleet out.
+
+**Passwords are validated before they take effect** — length and no leading/trailing whitespace
+(a pasted trailing space is invisible in the UI and then fails at the device keypad).
+
+### Migration from the shared password
+
+Devices currently authenticate with one shared `APP_MASTER_PASSWORD`. Both schemes run side by
+side so the fleet keeps working while accounts are created:
+
+```
+login(username, password)
+   │
+   ├─ account exists? ──► validate against it. The master password is NOT accepted
+   │                      for a username that has a real account.
+   └─ no account ───────► fall back to APP_MASTER_PASSWORD (if still enabled)
+```
+
+Once every device has its own account, set `ALLOW_MASTER_PASSWORD_FALLBACK=false` and the shared
+password stops working. Until then the middleware logs a warning on every fallback login, so the
+remaining unmigrated devices are visible in the server log.
+
+### Suggested UI
+
+An **Operators** screen listing `app_users_public`, with:
+
+- **Add operator** — username + password + display name → `CREATE`
+- **Reset password** → `SET_PASSWORD`, warning that it signs the operator out of their device
+- **Disable / Enable** toggle → `DISABLE` / `ENABLE`
+- **Delete** → `DELETE`, worded as "blocks access; scan history is kept"
+- `last_login_at` shown as "last seen", so dormant accounts are easy to spot
+
+Poll the request row until terminal, then refresh the list.
+
+---
+
+## 9. Translations
 
 `message_dictionary` is **reseeded at every boot**, so it always describes exactly what the
 running middleware can emit — including codes added by an upgrade.
@@ -375,7 +537,7 @@ English; it never renders blank.
 
 ---
 
-## 9. Rendering guide
+## 10. Rendering guide
 
 ### Banner
 
@@ -385,7 +547,7 @@ English; it never renders blank.
 | `vision_state = 'PAUSED'` | 🔴 **Processing paused** — *fault text* + action button |
 | `state = 'RETRYING'` | 🟡 **Recovering automatically** |
 | `queue_parked > 0` | 🟡 ***n* scans need review** |
-| `queue_pending > 0` | 🔵 ***n* scans queued** — draining |
+| `queue_pending > 0` | 🔵 ***n* scans queued** — draining *(normal; only escalate if it stops falling)* |
 | otherwise | 🟢 **All systems normal** |
 
 ### Always pair a pause with reassurance
@@ -422,13 +584,16 @@ This is factually true — see §10.
 
 ---
 
-## 10. Guarantees
+## 11. Guarantees
 
 **Guaranteed**
 
 - A scan that reaches the server is recorded **before** any vision call. Outage, pause, crash,
   or restart cannot make it disappear. *Zero data loss = no scan is forgotten*, not "every API
   call succeeds".
+- Scanning **never stops** because the AI is unavailable. Devices keep uploading and the server
+  keeps accepting; work accumulates in `queue_pending` and drains when processing resumes. A
+  paused pipeline is a delay, never a refusal (see `api_contract.md` v1.1 §2).
 - No message is lost by being overwritten — events are append-only and coalesced.
 - Every command reaches a terminal status with a result.
 - A pause survives a restart (stored in `control.db`, not memory).
@@ -445,11 +610,15 @@ This is factually true — see §10.
 - **Ordering across directions.** An event and a command issued simultaneously have no defined
   order.
 - **Protection from a malicious UI.** Any process that can write `control.db` can command a
-  purge. File permissions are the security boundary.
+  purge, or create an operator account. File permissions are the security boundary.
+- **Instant revocation while the account store is unreachable.** If `control.db` cannot be read,
+  the middleware keeps serving devices using the last known account standing rather than locking
+  the fleet out. Revocations issued *before* the outage are still enforced; one issued *during*
+  it takes effect when the database returns.
 
 ---
 
-## 11. Reference queries
+## 12. Reference queries
 
 ```sql
 -- Dashboard state
@@ -487,6 +656,22 @@ VALUES (:key, :vision_model, :image_model, unixepoch() * 1000, 'ui:operator_01',
 SELECT api_key_fingerprint, vision_model, image_model, validation_status, validated_at
 FROM vision_settings WHERE id = 1;
 
+-- Operator list
+SELECT username, display_name, status, last_login_at, created_by
+FROM app_users_public ORDER BY username;
+
+-- Create an operator
+INSERT INTO app_user_requests
+  (action, username, password, display_name, submitted_at, submitted_by, status)
+VALUES ('CREATE', :username, :password, :display_name, unixepoch() * 1000, 'ui:admin', 'PENDING');
+
+-- Disable one (signs them out immediately)
+INSERT INTO app_user_requests (action, username, submitted_at, submitted_by, status)
+VALUES ('DISABLE', :username, unixepoch() * 1000, 'ui:admin', 'PENDING');
+
+-- Poll any account change
+SELECT status, result_detail, resolved_at FROM app_user_requests WHERE id = :id;
+
 -- Recent history (resolved included)
 SELECT e.code, e.occurrences, e.created_at, e.resolved_at, d.severity
 FROM server_events e JOIN message_dictionary d ON d.code = e.code
@@ -495,7 +680,7 @@ ORDER BY e.id DESC LIMIT 50;
 
 ---
 
-## 12. Integration checklist
+## 13. Integration checklist
 
 - [ ] Open with `journal_mode = WAL` **and** `busy_timeout = 5000`
 - [ ] Group permissions set, **including the setgid bit** on the data directory
@@ -507,6 +692,11 @@ ORDER BY e.id DESC LIMIT 50;
 - [ ] Key submissions poll until `APPLIED`/`REJECTED` and show `result_detail` on rejection
 - [ ] The UI never writes `resolved_at`, `.env`, or any middleware-owned table
 - [ ] Armenian translations loaded into `message_translations`
+- [ ] `queue_pending > 0` rendered as healthy throughput, not as a fault
+- [ ] Operator list read from `app_users_public`, never from `app_users`
+- [ ] Passwords never stored, logged, or re-displayed by the UI
+- [ ] "Reset password" and "Disable" warn that the operator is signed out immediately
+- [ ] Account-change requests polled until `APPLIED`/`REJECTED`, showing `result_detail`
 
 ---
 
@@ -519,6 +709,14 @@ ORDER BY e.id DESC LIMIT 50;
 | `QUEUE_DRAIN_MS` | `60000` | Backlog sweep |
 | `QUEUE_DRAIN_BATCH` | `25` | Scans per sweep |
 | `QUEUE_BACKLOG_WARNING` | `25` | Pending count raising `QUEUE_BACKLOG` |
+| `VISION_SECONDS_PER_ITEM` | `5` | Per-scan estimate the middleware sends to devices |
+| `PASSWORD_MIN_LENGTH` | `8` | Minimum operator password length |
+| `ALLOW_MASTER_PASSWORD_FALLBACK` | `true` | Shared-password login for devices without an account |
+| `LOGIN_RATE_LIMIT_MAX` | `30` | Login attempts per minute per IP |
+| `POLL_RETRY_MIN_SECONDS` / `_MAX_` | `5` / `120` | Bounds on the device polling hint |
+
+The last two are mobile-facing (`api_contract.md` v1.1 §5) and are listed here only so the
+dashboard can show operators the same wait estimate the handsets are being given.
 
 For the one-minute cadence: set both `CONTROL_*` to `60000` and treat > 180 s as unreachable.
 Defaults are tighter because polling a local SQLite file costs essentially nothing.

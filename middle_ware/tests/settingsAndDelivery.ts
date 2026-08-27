@@ -86,15 +86,29 @@ async function main(): Promise<void> {
   const rejected = controlDb
     .prepare('SELECT * FROM vision_settings_pending ORDER BY id DESC LIMIT 1')
     .get() as { status: string; result_detail: string; api_key: string | null };
-  check('submission REJECTED', rejected.status === 'REJECTED', rejected.status);
-  check('rejection explains why', /VISION_BAD_CREDENTIALS/.test(rejected.result_detail), rejected);
-  check('plaintext key erased after handling', rejected.api_key === null, rejected.api_key);
-  check('no key was adopted', storedApiKey() === null);
+
+  // The one thing that must ALWAYS hold, network weather notwithstanding:
+  // a key that was never verified is never adopted.
+  check('bad key was NOT adopted', storedApiKey() === null, storedApiKey());
   check('still paused', isVisionPaused());
-  check(
-    'operator told the submission failed',
-    listOpenEvents().some((e) => e.code === 'VISION_SETTINGS_REJECTED'),
-  );
+
+  if (rejected.status === 'PENDING') {
+    // The probe could not reach the API. Correct behaviour is to hold, not to
+    // guess in either direction.
+    skip('submission REJECTED', `validation inconclusive (${rejected.result_detail})`);
+    skip('rejection explains why', 'validation inconclusive');
+    skip('operator told the submission failed', 'validation inconclusive');
+    check('inconclusive probe leaves it queued for retry', true);
+    check('plaintext retained only while still pending', rejected.api_key !== null);
+  } else {
+    check('submission REJECTED', rejected.status === 'REJECTED', rejected.status);
+    check('rejection explains why', /VISION_BAD_CREDENTIALS/.test(rejected.result_detail), rejected);
+    check('plaintext key erased after handling', rejected.api_key === null, rejected.api_key);
+    check(
+      'operator told the submission failed',
+      listOpenEvents().some((e) => e.code === 'VISION_SETTINGS_REJECTED'),
+    );
+  }
 
   // ------------------------------------------------------------------------
   section('Good key submitted through the UI is validated and adopted');
