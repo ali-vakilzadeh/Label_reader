@@ -5,11 +5,14 @@
 **Stack:** Node.js 20 LTS · TypeScript 5.8 · Express 4.21 · better-sqlite3 11 · @google/genai 1.x
 **Status:** Feature-complete against `api_contract.md` and `server_specification.json`, plus a
 durable intake queue, a UI control channel, and a fully asynchronous client protocol
-(`api_contract.md` **v1.1**). Build and typecheck clean; **215 checks pass with no network
+(`api_contract.md` **v1.2**). Build and typecheck clean; **355 checks pass with no network
 access**. The vision path is verified against the live API with real photos.
 
-**Companion document:** [`UI_messaging_protocol.md`](UI_messaging_protocol.md) — the contract the
-Web UI codes against.
+**Companion documents:**
+[`api_contract.md`](api_contract.md) (Android) ·
+[`UI_messaging_protocol.md`](UI_messaging_protocol.md) (Web UI transport) ·
+[`server_setting_page.md`](server_setting_page.md) (Web UI page design) ·
+[`setup.md`](setup.md) (VPS installation).
 
 ---
 
@@ -801,6 +804,7 @@ sudo chown "$USER":"$USER" /opt/apparel-middleware
 cd /opt/apparel-middleware
 
 # ship the repo's middle_ware/ directory here (git clone or rsync)
+# reference_data/ MUST be included — the server refuses to start without it.
 rsync -av --exclude node_modules --exclude dist --exclude data \
       --exclude uploads --exclude .env  ./middle_ware/  /opt/apparel-middleware/
 
@@ -1080,7 +1084,9 @@ Then `npm run render:now`.
 | `npm run test:durability` | 38 | The zero-data-loss guarantee end to end | yes (degrades to skips) |
 | `npm run test:async` | 68 | api_contract.md v1.1 end to end, deliberately with no API key | none |
 | `npm run test:users` | 46 | Operator accounts, revocation, soft delete, migration | none |
-| `npm run test:all` | 253 | typecheck + all six offline suites | none |
+| `npm run test:taxonomy` | 61 | Two-mode taxonomy, CSV loading, latency at real sizes | none |
+| `npm run test:commission` | 49 | Cold start, 10-device load, cross-process exchange, hostile input, restart | none |
+| `npm run test:all` | 355 | typecheck + all seven offline suites | none |
 | `npm run test:live -- <images...>` | — | Real Gemini call, full pipeline, persistence and export report | Gemini |
 | `npx tsx tests/cronCheck.ts` | — | Cron validity, tick reaches the job, failure marking | none |
 | `npm run typecheck` | — | `tsc --noEmit`, strict, **including `tests/`** | none |
@@ -1790,25 +1796,33 @@ within a shift, so nearly every real lookup is a cache hit.
 
 ### 24.4 Where the data lives
 
-Source: `docs/client_data/Translations-Cleaned.xlsx`, one sheet per dimension, each row
-`Armenian | id | English`. Extracted **once**; the project contains no xlsx-parsing code,
-because the files must stay editable by hand.
+Source: the client's per-table CSVs, exported by hand from
+`docs/client_data/Translations-Cleaned.xlsx`. `docs/` is not published with the middleware, so the
+CSVs are copied into `middle_ware/reference_data/`. The project contains no xlsx-parsing code —
+the files must stay editable by hand.
+
+**One copy, inside the middleware.** The client's CSVs are the source of truth and ship with the
+server; there is no second generated copy to drift out of step:
 
 ```
+middle_ware/reference_data/
+    sub-category.csv  brand.csv  country.csv  material.csv
+    color.csv  gender.csv  season.csv          columns: armenian, id, english
 middle_ware/src/data/taxonomy/
-    subCategories.json  brands.json  countries.json  materials.json   plain string arrays
-    enums.json                                        category / color / gender / season
-reference_data/
-    sub_categories.csv  brands.csv  countries.csv  materials.csv
-    colors.csv  genders.csv  seasons.csv            english, armenian, id
+    enums.json                                 category only — no client table exists for it
 ```
 
-Taxonomy files accept either form, so aliases can be added by hand where they help:
+`src/data/referenceTables.ts` reads them at boot and takes **only the English column**. Editing a
+table means editing the CSV and restarting — no build step, no parser to maintain, and the
+dashboard reads the same files for Armenian and ids.
 
-```jsonc
-"Trousers"
-{ "key": "Trousers", "aliases": ["Pants", "Slacks"] }
-```
+The files genuinely contain quoted commas (`"Hello, By Loggi"`), so the loader is a small
+RFC-4180 reader rather than a `split(',')`; a test covers that case against the real data.
+
+A missing or unreadable table **throws at boot**. Without it every scan would return unmatched
+free text and quietly fill the ledger with junk, which is worse than not starting.
+
+Deployment must therefore ship `reference_data/`.
 
 ### 24.5 Division of labour with the dashboard
 
@@ -1965,4 +1979,4 @@ three log in, and a wrong password is refused.
 | `settingsAndDelivery.ts` | 32 | partly (offline paths always run) |
 | `contractQueries.ts` | 30 | no |
 | `errorClassification.ts` | 26 | no |
-| **Total** | **253** | all pass with no network |
+| **Total** | **355** | all pass with no network |

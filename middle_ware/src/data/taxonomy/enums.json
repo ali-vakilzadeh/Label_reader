@@ -28,49 +28,5 @@
         "jewelry"
       ]
     }
-  ],
-  "color": [
-    "Red",
-    "Yellow",
-    "Green",
-    "Blue",
-    "Purple",
-    "Grey",
-    "Orange",
-    "Brown",
-    "White",
-    "Pink",
-    "Turquoise",
-    "Ivory",
-    "Cream",
-    "Multicolored",
-    "Black",
-    "Gold",
-    "Silver",
-    "Milk",
-    "Dark red",
-    "Blue - Dark",
-    "Khaki",
-    "Blue - Navy",
-    "Green-Blue",
-    "Blue - Light",
-    "Black - White",
-    "no color"
-  ],
-  "gender": [
-    "Men",
-    "Women",
-    "Girls",
-    "Boys",
-    "Unisex",
-    "Baby Girl",
-    "Baby Boy"
-  ],
-  "season": [
-    "Summer",
-    "Autumn",
-    "Spring",
-    "Winter",
-    "All Seasons"
   ]
 }

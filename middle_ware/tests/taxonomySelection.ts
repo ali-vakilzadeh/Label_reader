@@ -49,6 +49,39 @@ async function main(): Promise<void> {
   const { normalizeExtraction } = await import('../src/services/visionService');
 
   // ------------------------------------------------------------------------
+  section('Tables come from the committed CSVs, not a second copy');
+  const fs = await import('node:fs');
+  const path = await import('node:path');
+  const { ROOT_DIR } = await import('../src/config/env');
+  const { parseCsv, referenceTables } = await import('../src/data/referenceTables');
+
+  const refDir = path.join(ROOT_DIR, 'reference_data');
+  check('reference_data ships inside the middleware', fs.existsSync(refDir), refDir);
+  for (const file of ['sub-category.csv', 'brand.csv', 'country.csv', 'material.csv',
+                      'color.csv', 'gender.csv', 'season.csv']) {
+    check(`${file} present`, fs.existsSync(path.join(refDir, file)));
+  }
+  check(
+    'no duplicate taxonomy JSON left behind',
+    !fs.existsSync(path.join(ROOT_DIR, 'src', 'data', 'taxonomy', 'subCategories.json')),
+  );
+
+  // The client files really do contain quoted commas; splitting would corrupt them.
+  const q = String.fromCharCode(34);
+  const sample = [
+    'a,b',
+    q + 'Hello, By Loggi' + q + ',940',
+    q + 'say ' + q + q + 'hi' + q + q + q + ',7',
+  ].join(String.fromCharCode(10));
+  const quoted = parseCsv(sample);
+  check('quoted comma parsed as one field', quoted[1]?.[0] === 'Hello, By Loggi', quoted[1]);
+  check('escaped quotes handled', quoted[2]?.[0] === 'say ' + q + 'hi' + q, quoted[2]);
+  check(
+    'the real quoted brand survived the load',
+    referenceTables.brands.includes('Hello, By Loggi'),
+  );
+
+  // ------------------------------------------------------------------------
   section('Table sizes match the client workbook');
   check('sub_category 295', subCategoryIndex.size === 295, subCategoryIndex.size);
   check('brand 839', brandIndex.size === 839, brandIndex.size);

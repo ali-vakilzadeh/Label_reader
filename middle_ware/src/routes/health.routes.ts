@@ -13,7 +13,7 @@ healthRouter.get('/health', (_req, res) => {
     uptime_seconds: Math.floor(process.uptime()),
     version: process.env.npm_package_version ?? '1.1.0',
     // API contract revision this build implements (api_contract.md).
-    api_contract: '1.1',
+    api_contract: '1.2',
     gemini_ready: isGeminiReady(),
   });
 });

@@ -270,9 +270,10 @@ async function main(): Promise<void> {
   check('confidence preserved', normalized.color.confidence === 0.92);
 
   section('Prompt / taxonomy coupling');
-  const subCategoryKeys = (
-    require('../src/data/taxonomy/subCategories.json') as string[]
-  );
+  const { referenceTables } = require('../src/data/referenceTables') as {
+    referenceTables: { subCategories: string[]; colors: string[]; genders: string[]; seasons: string[] };
+  };
+  const subCategoryKeys = referenceTables.subCategories;
   // Long tables must NEVER reach the model: the client's 295 sub-categories and
   // 839 brands would bloat every request and push the model toward guessing a
   // listed option instead of reading the label.
@@ -288,10 +289,10 @@ async function main(): Promise<void> {
     ),
   );
   // Short enums still are, so the model can choose from them.
-  const enumData = require('../src/data/taxonomy/enums.json') as {
-    color: string[];
-    gender: string[];
-    season: string[];
+  const enumData = {
+    color: referenceTables.colors,
+    gender: referenceTables.genders,
+    season: referenceTables.seasons,
   };
   check(
     'every colour is offered to the model',

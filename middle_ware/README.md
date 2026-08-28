@@ -18,7 +18,9 @@ npm run build
 npm start              # or: npm run dev
 ```
 
-`npm run test:all` runs every offline suite — no API key or network needed.
+`npm run test:all` runs every offline suite — 355 checks, no API key or network needed.
+
+**Deploying to a server?** Follow [`setup.md`](setup.md).
 
 ### Test operator accounts
 
@@ -57,13 +59,16 @@ entry is worse than an unmatched one.
 **Tables live as committed, hand-editable data**, not code:
 
 ```
-middle_ware/src/data/taxonomy/*.json   English only — what the middleware matches against
-reference_data/*.csv                   english, armenian, id — for the dashboard
+middle_ware/reference_data/*.csv    the client's tables: armenian, id, english
 ```
 
-Armenian text and the numeric ids are **dashboard-only**; the middleware neither stores nor
-emits them. Customs codes are dashboard-only too. To change a table, edit the file — no build
-step, no parser.
+One copy, shipped with the server. The middleware reads only the English column at boot; the
+dashboard reads the same files for Armenian and the numeric ids. Customs codes are dashboard-only
+too. **To change a table, edit the CSV and restart** — no build step, no parser, no second copy
+to keep in sync.
+
+`category` is the exception: the client has no table for it, so its three values stay in
+`src/data/taxonomy/enums.json`.
 
 ## Endpoints
 

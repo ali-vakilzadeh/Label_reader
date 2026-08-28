@@ -112,6 +112,82 @@ controlDb.exec(`
 
   CREATE INDEX IF NOT EXISTS idx_commands_status ON ui_commands (status, id);
 `);
+/*
+ * Tables owned by other modules, created HERE on purpose.
+ *
+ * control.db is opened by a second process (the Web UI). If each module created
+ * its own tables on first import, the visible schema would depend on the
+ * middleware's import order, and a UI connecting mid-boot could hit "no such
+ * table". Declaring the whole schema at open time removes that race; the logic
+ * for these tables still lives in visionSettings.ts and appUsers.ts.
+ */
+controlDb.exec(`
+  CREATE TABLE IF NOT EXISTS vision_settings (
+    id                  INTEGER PRIMARY KEY CHECK (id = 1),
+    api_key_ciphertext  TEXT,
+    api_key_iv          TEXT,
+    api_key_tag         TEXT,
+    api_key_fingerprint TEXT,
+    vision_model        TEXT,
+    image_model         TEXT,
+    validation_status   TEXT NOT NULL DEFAULT 'UNSET',
+    validation_detail   TEXT,
+    validated_at        INTEGER,
+    updated_at          INTEGER,
+    updated_by          TEXT
+  );
+  INSERT OR IGNORE INTO vision_settings (id, validation_status) VALUES (1, 'UNSET');
+
+  CREATE TABLE IF NOT EXISTS vision_settings_pending (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    api_key       TEXT,
+    vision_model  TEXT,
+    image_model   TEXT,
+    submitted_at  INTEGER NOT NULL,
+    submitted_by  TEXT,
+    status        TEXT NOT NULL DEFAULT 'PENDING',
+    result_detail TEXT,
+    resolved_at   INTEGER
+  );
+  CREATE INDEX IF NOT EXISTS idx_vision_pending ON vision_settings_pending (status, id);
+
+  CREATE TABLE IF NOT EXISTS app_users (
+    username        TEXT PRIMARY KEY,
+    display_name    TEXT,
+    password_hash   TEXT NOT NULL,
+    password_salt   TEXT NOT NULL,
+    password_params TEXT NOT NULL,
+    status          TEXT NOT NULL DEFAULT 'ACTIVE',
+    tokens_valid_from INTEGER NOT NULL,
+    created_at      INTEGER NOT NULL,
+    created_by      TEXT,
+    updated_at      INTEGER NOT NULL,
+    updated_by      TEXT,
+    last_login_at   INTEGER
+  );
+  CREATE INDEX IF NOT EXISTS idx_app_users_status ON app_users (status);
+
+  CREATE TABLE IF NOT EXISTS app_user_requests (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    action        TEXT NOT NULL,
+    username      TEXT NOT NULL,
+    password      TEXT,
+    display_name  TEXT,
+    submitted_at  INTEGER NOT NULL,
+    submitted_by  TEXT,
+    status        TEXT NOT NULL DEFAULT 'PENDING',
+    result_detail TEXT,
+    resolved_at   INTEGER
+  );
+  CREATE INDEX IF NOT EXISTS idx_app_user_requests ON app_user_requests (status, id);
+
+  CREATE VIEW IF NOT EXISTS app_users_public AS
+    SELECT username, display_name, status, created_at, created_by,
+           updated_at, updated_by, last_login_at
+    FROM app_users
+    WHERE status <> 'DELETED';
+`);
+
 
 // --------------------------------------------------------------- dictionary --
 

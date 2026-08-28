@@ -1,12 +1,15 @@
 # API Contract Specification
 
-**Version 1.1** · Binding contract between the Android client and the middleware.
-Supersedes v1.0. Changes are listed in [§8](#8-migration-from-v10).
+**Version 1.2** · Binding contract between the Android client and the middleware.
+Supersedes v1.1. Changes are listed in [§9](#9-migration-from-v11).
 
-> **v1.1 makes extraction fully asynchronous.** `POST /vision/extract` no longer waits for the
-> AI. It stores the scan, answers immediately, and the client polls for the result. This matches
-> the app's existing `STATUS_PENDING_VISION` queue — see [§8](#8-migration-from-v10) for exactly
-> what the client must change.
+> **v1.2 replaces the controlled vocabularies** with the client's reference tables. The values
+> the server sends for `sub_category`, `brand_name`, `country_of_origin`, `material`, `color`,
+> `gender` and `season` have changed — see [§8](#8-field-vocabularies) and
+> [§9](#9-migration-from-v11). Request and response *shapes* are unchanged.
+>
+> v1.1 made extraction fully asynchronous: `POST /vision/extract` stores the scan, answers
+> `202` immediately, and the client polls for the result.
 
 ---
 
@@ -19,7 +22,8 @@ Supersedes v1.0. Changes are listed in [§8](#8-migration-from-v10).
 5. [Polling guidance](#5-polling-guidance)
 6. [Error responses](#6-error-responses)
 7. [Client state machine](#7-client-state-machine)
-8. [Migration from v1.0](#8-migration-from-v10)
+8. [Field vocabularies](#8-field-vocabularies)
+9. [Migration from v1.1](#9-migration-from-v11)
 
 ---
 
@@ -183,18 +187,18 @@ Two cases return `READY_TO_CONFIRM` immediately, because neither needs the AI:
   "retry_after_seconds": 5,
   "blocking_fault": null,
   "data": {
-    "brand_name":        { "value": "Nike",            "confidence": 0.95 },
-    "country_of_origin": { "value": "Vietnam",         "confidence": 0.88 },
-    "size":              { "value": "XL",              "confidence": 0.90 },
-    "color":             { "value": "black",           "confidence": 0.92 },
-    "material":          { "value": "100% Polyester",  "confidence": 0.85 },
-    "original_price":    { "value": "$45.00",          "confidence": 0.99 },
-    "netto":             { "value": "240g",            "confidence": 0.80 },
-    "brutto":            { "value": "290g",            "confidence": 0.80 },
-    "category":          { "value": "clothing",        "confidence": 0.90 },
-    "sub_category":      { "value": "pants",           "confidence": 0.85 },
-    "gender":            { "value": "unisex",          "confidence": 0.75 },
-    "season":            { "value": "all-seasons",     "confidence": 0.70 }
+    "brand_name":        { "value": "Nike",         "confidence": 0.95 },
+    "country_of_origin": { "value": "VIETNAM",      "confidence": 0.88 },
+    "size":              { "value": "XL",           "confidence": 0.90 },
+    "color":             { "value": "Black",        "confidence": 0.92 },
+    "material":          { "value": "Polyester",    "confidence": 0.85 },
+    "original_price":    { "value": "$45.00",       "confidence": 0.99 },
+    "netto":             { "value": "240g",         "confidence": 0.80 },
+    "brutto":            { "value": "290g",         "confidence": 0.80 },
+    "category":          { "value": "clothing",     "confidence": 0.90 },
+    "sub_category":      { "value": "Trousers",     "confidence": 0.85 },
+    "gender":            { "value": "Unisex",       "confidence": 0.75 },
+    "season":            { "value": "All Seasons",  "confidence": 0.70 }
   }
 }
 ```
@@ -387,50 +391,85 @@ server retains its own copies regardless.
 
 ---
 
-## 8. Migration from v1.0
+## 8. Field vocabularies
+
+The controlled values come from the client's reference tables, which ship with the server in
+`middle_ware/reference_data/*.csv`. Two kinds of field:
+
+### Selected locally (long tables)
+
+| Field | Entries | How the value is produced |
+|---|---|---|
+| `sub_category` | 295 | The model transcribes what the label says; the server maps it to the closest table entry |
+| `brand_name` | 839 | same |
+| `country_of_origin` | 222 | same. **UPPERCASE**, e.g. `VIETNAM`, `ITALY` |
+| `material` | 85 | same. A single fibre name, e.g. `Cotton` — not a composition string |
+
+These tables are far too long to enumerate here and **will grow**. Do not hardcode them in the
+app. When nothing matches closely enough the server returns the transcription unchanged, so the
+client must accept a value outside the table.
+
+The full lists are in the CSVs above, and in `docs/client_data/` for reference.
+
+### Chosen by the model (short enums)
+
+These are fixed and safe to hardcode for display:
+
+**`color`** — `Red`, `Yellow`, `Green`, `Blue`, `Purple`, `Grey`, `Orange`, `Brown`, `White`, `Pink`, `Turquoise`, `Ivory`, `Cream`, `Multicolored`, `Black`, `Gold`, `Silver`, `Milk`, `Dark red`, `Blue - Dark`, `Khaki`, `Blue - Navy`, `Green-Blue`, `Blue - Light`, `Black - White`, `no color`
+
+**`gender`** — `Men`, `Women`, `Girls`, `Boys`, `Unisex`, `Baby Girl`, `Baby Boy`
+
+**`season`** — `Summer`, `Autumn`, `Spring`, `Winter`, `All Seasons`
+
+**`category`** — `shoe`, `clothing`, `accessories`
+
+Values are case-sensitive and are sent exactly as listed.
+
+## 9. Migration from v1.1
 
 ### What changed
 
-| | v1.0 | v1.1 |
+**Only the field values changed. No shapes, no status codes, no endpoints.**
+
+| Field | v1.1 | v1.2 |
 |---|---|---|
-| `POST /vision/extract` success | `200` + `data` | **`202`**, `data` only when `READY_TO_CONFIRM` |
-| Waits for the AI | Yes, up to ~25 s | **No** — returns immediately |
-| Stored-but-unprocessed | `503 VISION_QUEUED` | **`202 PENDING_AI`** |
-| Result retrieval | *(none)* | `GET /vision/result/:id`, `GET /vision/results` |
-| Pipeline state | *(none)* | `processing_status` on every scan response |
-| Poll timing | *(none)* | `retry_after_seconds`, `estimated_wait_seconds`, `queue_depth` |
-
-### Accounts and revocation
-
-Handle `401` on **any** endpoint, not just login: a supervisor can disable an operator or reset a
-password at any moment, and the device finds out on its next request. Clear the stored token and
-return to the login screen. Queued scans stay in Room and upload after the next successful login —
-nothing is lost by a revocation.
+| `sub_category` | 14 fixed keys (`shirt`, `pants`, …) | **295** client entries (`Trousers`, `T-shirt`, `Hoodie`, …) |
+| `brand_name` | free text | **839** client entries, or free text when unmatched |
+| `country_of_origin` | `Vietnam` | **`VIETNAM`** — uppercase, 222 entries |
+| `material` | composition string, e.g. `100% Polyester` | single fibre name, e.g. `Cotton` — 85 entries |
+| `color` | 9 lowercase keys | **26** entries, e.g. `Blue - Navy`, `Multicolored`, `no color` |
+| `gender` | `male`, `female`, `unisex`, `kids-boy`, `kids-girl`, `newborn` | `Men`, `Women`, `Girls`, `Boys`, `Unisex`, `Baby Girl`, `Baby Boy` |
+| `season` | `spring`, `summer`, `fall`, `winter`, `all-seasons` | `Summer`, `Autumn`, `Spring`, `Winter`, `All Seasons` |
+| `category` | `shoe`, `clothing`, `accessories` | **unchanged** |
 
 ### Client changes required
 
-1. **Accept `202`** as success on `POST /vision/extract`. Treating it as an error would mark
-   healthy scans as failed.
-2. **Branch on `processing_status`**, not on the HTTP status code.
-3. **Implement polling** for `PENDING_AI` — preferably the batch endpoint.
-4. **Handle `NEEDS_ATTENTION`** as a distinct terminal state from a transport failure. The scan
-   is safe on the server; it needs a person, not a retry.
-5. **Stop treating `5xx` as "maybe stored"** — `5xx` now reliably means *not* stored, so resending
-   is always correct and never duplicates.
+1. **Remove any hardcoded list for `sub_category`, `brand_name`, `country_of_origin` or
+   `material`.** These come from tables that grow, and the server may return a value that is not
+   in any table when the label could not be matched. Treat all four as free text for storage and
+   display; validate on the four short enums only.
+2. **Update the short enum lists** ([§8](#8-field-vocabularies)) wherever they drive dropdowns,
+   colour swatches, icons or filters. Values are case-sensitive — `Women`, not `women`.
+3. **Expect `material` to be one fibre**, not a percentage composition. If the app parsed
+   `"80% Cotton 20% Polyester"`, that parsing is no longer needed.
+4. **Expect `country_of_origin` in uppercase.** Title-case it for display if preferred.
+5. Nothing about auth, polling, `processing_status`, or the storage invariant changed.
 
-### What did **not** change
+### Why the values changed
 
-- The `data` object: same 12 fields, same `{ value, confidence }` shape, same enum values.
-- `POST /auth/login` and `GET /health`.
-- `catalog_image_url`: same deterministic format, still returned before the image exists.
-- The error envelope `{ status, error_code, message }`.
-- Multipart field names and the 8-image / 12 MB limits.
+The vocabularies are now the client's own reference tables — the same ones the dashboard and the
+customs export use — instead of a shorter set invented during the initial build. Sharing one
+vocabulary end to end means an operator, the dashboard and a customs declaration all name a
+garment the same way.
 
-### Safe to resend
+The long tables are deliberately **not** sent to the AI model. It is asked to read what the label
+actually says, and the server maps that reading onto the table. A model handed 295 options starts
+choosing rather than reading, and a confident wrong pick is harder to spot than an honest
+transcription.
 
-Re-submitting the same `apparel_id` with the same images is **idempotent**: the server replays
-the stored result rather than re-running the AI or overwriting a completed extraction. A client
-that is unsure whether a submission landed can simply resend.
+### What did not change
 
-Re-submitting the same `apparel_id` with **different** images is treated as a genuine re-scan and
-queues a fresh extraction.
+- Endpoints, HTTP status codes, and the `202`-always submit behaviour.
+- The response shape: same 12 fields, same `{ value, confidence }`, same `processing_status`.
+- The storage invariant, polling hints, and error envelope.
+- Authentication, token revocation, and the multipart field names.

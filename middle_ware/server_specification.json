@@ -7,7 +7,7 @@
     "concurrent_clients": 10,
     "spec_version": "2.0",
     "companion_documents": {
-      "api_contract.md": "v1.1 - locked contract with the Android client (async, 202-always)",
+      "api_contract.md": "v1.2 - locked contract with the Android client (async 202-always; client reference vocabularies)",
       "UI_messaging_protocol.md": "v1.3 - middleware <-> dashboard channel over control.db",
       "dev_report.md": "implementation reference, deploy runbook, open gaps"
     }
@@ -119,9 +119,9 @@
         "season": 5
       }
     },
-    "source_of_truth": "docs/client_data/Translations-Cleaned.xlsx, extracted once into committed hand-editable files.",
-    "middleware_files": "middle_ware/src/data/taxonomy/*.json - English only, plain string arrays.",
-    "dashboard_files": "reference_data/*.csv - english, armenian, id. Armenian text and numeric ids are DASHBOARD-ONLY; the middleware neither stores nor emits them.",
+    "source_of_truth": "middle_ware/reference_data/*.csv - the client's tables (armenian, id, english), shipped with the server and edited by hand. Exported from docs/client_data/Translations-Cleaned.xlsx, which is NOT published with the middleware.",
+    "middleware_files": "middle_ware/reference_data/*.csv, read at boot by src/data/referenceTables.ts which takes only the English column. A missing table throws at boot. src/data/taxonomy/enums.json holds category only (no client table exists for it).",
+    "dashboard_files": "The same CSVs. Armenian text and numeric ids are DASHBOARD-ONLY; the middleware neither stores nor emits them.",
     "customs_codes": "Dashboard-only. The middleware has no involvement with customs codes, and the taxonomy ids are not customs codes."
   }
 }

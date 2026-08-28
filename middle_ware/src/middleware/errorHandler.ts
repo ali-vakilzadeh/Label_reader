@@ -46,6 +46,21 @@ export function errorHandler(
     return;
   }
 
+  // body-parser throws a SyntaxError carrying the raw body when JSON is
+  // malformed. That is a client mistake, so it must be 4xx: a 5xx would tell the
+  // device the server lost its request and to resend everything.
+  if (
+    error instanceof SyntaxError &&
+    'body' in (error as unknown as Record<string, unknown>)
+  ) {
+    res.status(400).json({
+      status: 'error',
+      error_code: 'INVALID_JSON',
+      message: 'Request body is not valid JSON.',
+    } satisfies ApiErrorBody);
+    return;
+  }
+
   if (error instanceof multer.MulterError) {
     const message =
       error.code === 'LIMIT_FILE_SIZE'

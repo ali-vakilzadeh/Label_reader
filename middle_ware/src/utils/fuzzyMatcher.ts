@@ -1,10 +1,7 @@
 import Fuse from 'fuse.js';
 import type { IFuseOptions } from 'fuse.js';
-import subCategoriesData from '../data/taxonomy/subCategories.json';
-import brandsData from '../data/taxonomy/brands.json';
-import materialsData from '../data/taxonomy/materials.json';
+import { referenceTables } from '../data/referenceTables';
 import enumsData from '../data/taxonomy/enums.json';
-import countriesData from '../data/taxonomy/countries.json';
 import { logger } from './logger';
 
 /**
@@ -178,23 +175,26 @@ function requireEnum(name: string): TaxonomyEntry[] {
  *    local matcher replaces that free text with the closest table entry.
  */
 export const subCategoryIndex = new FuzzyIndex(
-  toEntries(subCategoriesData as TaxonomySource[]),
+  toEntries(referenceTables.subCategories),
   'sub_category',
 );
-export const brandIndex = new FuzzyIndex(toEntries(brandsData as TaxonomySource[]), 'brand_name');
+export const brandIndex = new FuzzyIndex(toEntries(referenceTables.brands), 'brand_name');
 export const countryIndex = new FuzzyIndex(
-  toEntries(countriesData as TaxonomySource[]),
+  toEntries(referenceTables.countries),
   'country_of_origin',
 );
-export const materialIndex = new FuzzyIndex(
-  toEntries(materialsData as TaxonomySource[]),
-  'material',
-);
+export const materialIndex = new FuzzyIndex(toEntries(referenceTables.materials), 'material');
 
+export const colorIndex = new FuzzyIndex(toEntries(referenceTables.colors), 'color');
+export const genderIndex = new FuzzyIndex(toEntries(referenceTables.genders), 'gender');
+export const seasonIndex = new FuzzyIndex(toEntries(referenceTables.seasons), 'season');
+
+/**
+ * `category` is the one taxonomy with no client table — the workbook has no
+ * sheet for it — so its three values stay in enums.json. Confirmed correct with
+ * the client.
+ */
 export const categoryIndex = new FuzzyIndex(requireEnum('category'), 'category');
-export const colorIndex = new FuzzyIndex(requireEnum('color'), 'color');
-export const genderIndex = new FuzzyIndex(requireEnum('gender'), 'gender');
-export const seasonIndex = new FuzzyIndex(requireEnum('season'), 'season');
 
 /**
  * Fields whose free-text Gemini output is replaced by a local table selection.
@@ -225,9 +225,9 @@ export const CONSTRAINED_FIELDS = {
  */
 export const TAXONOMY_KEYS = {
   category: requireEnum('category').map((e) => e.key).join(', '),
-  color: requireEnum('color').map((e) => e.key).join(', '),
-  gender: requireEnum('gender').map((e) => e.key).join(', '),
-  season: requireEnum('season').map((e) => e.key).join(', '),
+  color: referenceTables.colors.join(', '),
+  gender: referenceTables.genders.join(', '),
+  season: referenceTables.seasons.join(', '),
 } as const;
 
 /** Back-compat alias used by the extraction pipeline. */

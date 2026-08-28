@@ -13,3 +13,5 @@ data/legalArmenianMap.json
 uploads/
 public/catalog/*
 !public/catalog/.gitkeep
+
+# reference_data/ IS committed — it ships with the server.

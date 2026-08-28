@@ -266,7 +266,7 @@ async function main(): Promise<void> {
   // ----------------------------------------------------------------- health
   section('§4.5 health advertises the contract revision');
   const health = (await (await fetch(`${base}/health`)).json()) as Record<string, any>;
-  check('api_contract is 1.1', health.api_contract === '1.1', health.api_contract);
+  check('api_contract is 1.2', health.api_contract === '1.2', health.api_contract);
   check('gemini_ready reported', typeof health.gemini_ready === 'boolean');
 
   // --------------------------------------------------- safety hardening ---
