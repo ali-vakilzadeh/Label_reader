@@ -19,11 +19,12 @@
     "test:errors": "tsx tests/errorClassification.ts",
     "test:durability": "tsx tests/durability.ts",
     "test:cron": "tsx tests/cronCheck.ts",
-    "test:all": "npm run typecheck && npm run test && npm run test:errors && npm run test:contract && npm run test:async && npm run test:users && npm run test:settings",
+    "test:all": "npm run typecheck && npm run test && npm run test:errors && npm run test:contract && npm run test:async && npm run test:taxonomy && npm run test:users && npm run test:settings",
     "test:contract": "tsx tests/contractQueries.ts",
     "test:settings": "tsx tests/settingsAndDelivery.ts",
     "test:async": "tsx tests/asyncContract.ts",
-    "test:users": "tsx tests/userManagement.ts"
+    "test:users": "tsx tests/userManagement.ts",
+    "test:taxonomy": "tsx tests/taxonomySelection.ts"
   },
   "dependencies": {
     "@google/genai": "^1.28.0",

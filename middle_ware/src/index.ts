@@ -10,15 +10,10 @@ import {
   stopExtractionQueue,
 } from './services/extractionQueue';
 import { isGeminiReady } from './services/geminiService';
-import { loadLegalArmenianMap } from './services/exportService';
 import { logger } from './utils/logger';
 
 function main(): void {
   const app = createApp();
-
-  // Warm the Armenian legal map so a missing file is reported at boot, not
-  // mid-export.
-  loadLegalArmenianMap();
 
   if (!isGeminiReady()) {
     logger.warn(

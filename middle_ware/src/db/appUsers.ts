@@ -358,6 +358,45 @@ export function resolveUserRequest(
   resolveRequestStmt.run({ id, status, detail, now: Date.now() });
 }
 
+/**
+ * Bootstrap operators for field testing before the Web UI exists.
+ *
+ * Runs only when the account table is completely empty, so it can never
+ * resurrect an account an administrator disabled or deleted. Validation is
+ * bypassed on purpose — these passwords are deliberately short and equal to the
+ * usernames, which the normal UI path would (rightly) reject.
+ *
+ * SEED_TEST_ACCOUNTS=false disables it. Do that before production: these are
+ * throwaway credentials and the boot log says so every time.
+ */
+const SEED_ACCOUNTS: ReadonlyArray<{ username: string; displayName: string }> = [
+  { username: 'minelli', displayName: 'Test operator 1' },
+  { username: 'karen', displayName: 'Test operator 2' },
+  { username: 'ali', displayName: 'Test operator 3' },
+];
+
+export function seedTestAccounts(enabled: boolean): number {
+  if (!enabled) return 0;
+
+  // Any existing account means the deployment is past bootstrap.
+  const existing = (
+    controlDb.prepare('SELECT COUNT(*) AS n FROM app_users').get() as { n: number }
+  ).n;
+  if (existing > 0) return 0;
+
+  for (const account of SEED_ACCOUNTS) {
+    // Password == username, by explicit request, for pre-UI field testing.
+    createUser(account.username, account.username, account.displayName, 'system:seed');
+  }
+
+  logger.warn(
+    `Seeded ${SEED_ACCOUNTS.length} TEST operator accounts ` +
+      `(${SEED_ACCOUNTS.map((a) => a.username).join(', ')}) with password = username. ` +
+      'These are insecure. Replace them and set SEED_TEST_ACCOUNTS=false before production.',
+  );
+  return SEED_ACCOUNTS.length;
+}
+
 /** Used by tests and any server-side provisioning path. */
 export function submitUserRequest(input: {
   action: AppUserAction;

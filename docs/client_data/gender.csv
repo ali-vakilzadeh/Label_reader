@@ -1,0 +1,8 @@
+﻿Gender_Armenian,Gender_id,Gender_English,Description
+Տղամարդկանց,1,Men,
+Կանանց,2,Women,
+Աղջիկների,3,Girls,
+Տղաների,4,Boys,
+Unisex,5,Unisex,
+Նորածին աղջիկ,6,Baby Girl,used for <1 year old
+Նորածին տղա,7,Baby Boy,used for <1 year old

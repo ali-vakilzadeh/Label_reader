@@ -37,7 +37,9 @@ Web UI codes against.
 20. [The UI control channel](#20-the-ui-control-channel)
 21. [Credential management](#21-credential-management)
 22. [Asynchronous client protocol (v1.1)](#22-asynchronous-client-protocol-v11)
-23. [Change log](#23-change-log)
+23. [Taxonomy strategy and the client reference tables](#24-taxonomy-strategy-and-the-client-reference-tables)
+24. [Bootstrap operator accounts](#25-bootstrap-operator-accounts)
+25. [Change log](#23-change-log)
 
 ---
 
@@ -324,10 +326,15 @@ src/data/taxonomy/*.json
                                  (what the model is told to produce)
 ```
 
-Without this, the two halves drift: the prompt would keep offering 14 sub-categories while the
-matcher snapped against 253, and the model could never produce most of the vocabulary. Two smoke
-checks assert that every taxonomy key appears in both the instruction and the schema, so the
-drift cannot silently reappear.
+> **SUPERSEDED by [§24](#24-taxonomy-strategy-and-the-client-reference-tables).** This coupling
+> was right when `sub_category` had 14 values. The client's tables have 295 sub-categories and
+> 839 brands, so those lists are no longer sent to the model at all. Only the four short
+> constrained enums are still generated into the prompt; the long tables are matched locally
+> after the fact.
+
+Without this, the two halves drift: the prompt would offer one set of values while the matcher
+snapped against another. The smoke checks now assert the inverse — that no long-table entry
+reaches the instruction or the schema, while every short-enum value does.
 
 ---
 
@@ -1732,6 +1739,135 @@ A client unsure whether a submission landed can simply resend.
 
 ---
 
+## 24. Taxonomy strategy and the client reference tables
+
+### 24.1 Two kinds of field
+
+Client decision, 2026-08-28. It supersedes [§4.4](#44-prompt-and-matcher-coupling), which
+described the opposite arrangement.
+
+| | Fields | Gemini's job | Middleware's job |
+|---|---|---|---|
+| **Reported** | `sub_category`, `brand_name`, `country_of_origin`, `material` | Transcribe what is printed, verbatim. **No option list is sent** | Replace the transcription with the closest client table entry |
+| **Constrained** | `category`, `color`, `gender`, `season` | Choose one option from the list in the prompt | Use the value **exactly as returned** |
+
+Table sizes: 295 sub-categories, 839 brands, 222 countries, 85 materials — 1,441 entries against
+41 for the four constrained enums.
+
+**Why the split.** Listing 1,441 values in every request would cost tokens on every scan, and —
+more importantly — it changes the task. A model handed a long list of plausible garment types
+starts *choosing* rather than *reading*, and a confident wrong pick from a list is much harder to
+detect than an honest transcription. So the model reads the label and the server decides what
+that reading corresponds to. The four short enums are genuine judgement calls with small answer
+sets, so listing them is both cheap and useful.
+
+An earlier revision generated the whole prompt from the taxonomy files, precisely so the model
+could never be told about a value the matcher didn't know. That was right at 14 sub-categories
+and wrong at 295. `TAXONOMY_KEYS` now exposes only the constrained enums, and a smoke check
+asserts that no long-table entry appears in either the instruction or the response schema.
+
+### 24.2 When nothing matches
+
+The matcher returns the transcription unchanged and logs at debug. It never forces a value onto
+the nearest table row — a wrong canonical key is worse than an unmatched one, because everything
+downstream trusts keys.
+
+Symmetrically, a constrained field that comes back off-list is **passed through and logged at
+warn**, never silently rewritten. Quietly "correcting" the model would hide prompt drift, and the
+decision says these values are used as received.
+
+### 24.3 Measured latency at real table sizes
+
+| Path | Per lookup |
+|---|---|
+| Cached repeat (brand, 839 entries) | 0.0011 ms |
+| Realistic mixed workload | 0.0006 ms |
+| Cold miss, sub_category (295) | 0.55 ms |
+| Cold miss, brand (839) | 1.55 ms |
+
+Worst case is unmatchable text against the largest table. Warehouse vocabulary repeats heavily
+within a shift, so nearly every real lookup is a cache hit.
+
+### 24.4 Where the data lives
+
+Source: `docs/client_data/Translations-Cleaned.xlsx`, one sheet per dimension, each row
+`Armenian | id | English`. Extracted **once**; the project contains no xlsx-parsing code,
+because the files must stay editable by hand.
+
+```
+middle_ware/src/data/taxonomy/
+    subCategories.json  brands.json  countries.json  materials.json   plain string arrays
+    enums.json                                        category / color / gender / season
+reference_data/
+    sub_categories.csv  brands.csv  countries.csv  materials.csv
+    colors.csv  genders.csv  seasons.csv            english, armenian, id
+```
+
+Taxonomy files accept either form, so aliases can be added by hand where they help:
+
+```jsonc
+"Trousers"
+{ "key": "Trousers", "aliases": ["Pants", "Slacks"] }
+```
+
+### 24.5 Division of labour with the dashboard
+
+| Concern | Middleware | Dashboard |
+|---|---|---|
+| Canonical English values | **owns** | reads |
+| Armenian text | not used | **owns** |
+| Numeric taxonomy ids | not used | **owns** |
+| Customs codes | not involved | **owns** |
+
+The middleware stores and emits English only. Everything presentational or legal is a join the
+dashboard performs against `reference_data/*.csv`.
+
+Consequence: `src/services/exportService.ts`, `scripts/convertTranslations.ts` and
+`data/translations.csv` are no longer wired into the server. They are retained, not deleted, so
+the work can move to the dashboard rather than be rewritten. The 12 smoke checks that covered
+Armenian export were removed with them.
+
+### 24.6 Wire-contract impact — open
+
+The client tables changed the values the device receives:
+
+| Field | `api_contract.md` v1.1 | Client table |
+|---|---|---|
+| `color` | 9 lowercase keys | 26, e.g. `Blue - Navy`, `Multicolored`, `no color` |
+| `gender` | `male`, `female`, `kids-boy`… | `Men`, `Women`, `Girls`, `Boys`, `Unisex`, `Baby Girl`, `Baby Boy` |
+| `season` | `spring`, `summer`, `fall`… | `Summer`, `Autumn`, `Spring`, `Winter`, `All Seasons` |
+| `sub_category` | 14 keys | 295 entries |
+| `category` | 3 keys | unchanged — no client table exists, so the original enum is kept |
+
+`api_contract.md` has **not** been changed, because the Android client is being built against
+v1.1 right now. This needs a coordinated decision before the next app release.
+
+---
+
+## 25. Bootstrap operator accounts
+
+`SEED_TEST_ACCOUNTS` (default `true`) seeds three throwaway accounts on a fresh install so
+devices can be tested before the Web UI exists:
+
+| Username | Password |
+|---|---|
+| `minelli` | `minelli` |
+| `karen` | `karen` |
+| `ali` | `ali` |
+
+Guarded so it cannot cause harm later:
+
+- It runs **only when the account table is completely empty**, so it can never resurrect an
+  account an administrator disabled or deleted.
+- It bypasses the normal password rules on purpose — these are shorter than
+  `PASSWORD_MIN_LENGTH` and equal to the username, which the UI path would rightly reject.
+- Every boot logs a `WARN` naming the accounts and saying they are insecure.
+
+**Set `SEED_TEST_ACCOUNTS=false` before production.** Verified against a running server: all
+three log in, and a wrong password is refused.
+
+---
+
 ## 23. Change log
 
 ### v1.1 — asynchronous client protocol
@@ -1759,6 +1895,16 @@ A client unsure whether a submission landed can simply resend.
 - The last active operator cannot be disabled or deleted.
 - Shared `APP_MASTER_PASSWORD` still works for usernames without an account, so the fleet keeps
   running during migration; `ALLOW_MASTER_PASSWORD_FALLBACK=false` closes it afterwards.
+
+**Taxonomy (client decision, 2026-08-28)**
+- Long reference tables (295 sub-categories, 839 brands, 222 countries, 85 materials) are never
+  sent to Gemini. The model transcribes what it reads; a local selector maps it to the table.
+- The four short enums (category, colour, gender, season) are still listed in the prompt and
+  their values used exactly as returned. Off-list answers are logged, never rewritten.
+- Tables are committed hand-editable JSON/CSV; no xlsx parsing in the project.
+- Armenian text, numeric ids and customs codes are dashboard-only. The Armenian export service
+  is unwired from the server but retained for relocation.
+- Three bootstrap operator accounts are seeded on a fresh install for pre-UI field testing.
 
 **Safety hardening**
 - Account standing is cached in memory, so an unreachable `control.db` cannot 401 the entire

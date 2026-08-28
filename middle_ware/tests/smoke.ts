@@ -15,11 +15,6 @@ import {
 } from '../src/db/flywheelDb';
 import { normalizeExtraction } from '../src/services/visionService';
 import { screenConfidence } from '../src/services/flywheelService';
-import {
-  buildBilingualExport,
-  toBilingualCsv,
-  translateMaterial,
-} from '../src/services/exportService';
 import { resolveWeights } from '../src/utils/weights';
 import { SYSTEM_INSTRUCTION, EXTRACTION_SCHEMA } from '../src/services/geminiService';
 import type { GeminiRawExtraction } from '../src/types';
@@ -264,31 +259,52 @@ async function main(): Promise<void> {
     none,
   );
 
-  section('Normalisation + fuzzy snapping');
+  section('Normalisation: reported fields matched, constrained fields passed through');
   const normalized = normalizeExtraction(sampleGemini());
-  check('country snapped to enum', normalized.country_of_origin.value === 'Vietnam');
-  check('sub_category "Trousers" -> pants', normalized.sub_category.value === 'pants');
-  check('color "Navy Blue" -> blue', normalized.color.value === 'blue');
-  check('brand kept verbatim', normalized.brand_name.value === 'Nike');
-  check('confidence preserved through snapping', normalized.color.confidence === 0.92);
+  // REPORTED -> replaced with a client table entry
+  check('country matched locally', normalized.country_of_origin.value === 'VIETNAM', normalized.country_of_origin);
+  check('sub_category matched locally', normalized.sub_category.value === 'Trousers', normalized.sub_category);
+  check('brand matched locally', normalized.brand_name.value === 'Nike', normalized.brand_name);
+  // CONSTRAINED -> used exactly as the model returned it
+  check('color used as returned', normalized.color.value === 'Navy Blue', normalized.color);
+  check('confidence preserved', normalized.color.confidence === 0.92);
 
   section('Prompt / taxonomy coupling');
   const subCategoryKeys = (
-    require('../src/data/taxonomy/subCategories.json') as { key: string }[]
-  ).map((entry) => entry.key);
+    require('../src/data/taxonomy/subCategories.json') as string[]
+  );
+  // Long tables must NEVER reach the model: the client's 295 sub-categories and
+  // 839 brands would bloat every request and push the model toward guessing a
+  // listed option instead of reading the label.
   check(
-    'system instruction lists every sub_category key',
-    subCategoryKeys.every((key) => SYSTEM_INSTRUCTION.includes(key)),
-    subCategoryKeys.filter((key) => !SYSTEM_INSTRUCTION.includes(key)),
+    'long sub_category table is NOT in the system instruction',
+    !subCategoryKeys.some((key) => key.length > 6 && SYSTEM_INSTRUCTION.includes(key)),
+    subCategoryKeys.filter((k) => k.length > 6 && SYSTEM_INSTRUCTION.includes(k)).slice(0, 3),
   );
   check(
-    'response schema lists every sub_category key',
-    subCategoryKeys.every((key) =>
-      String(
-        (EXTRACTION_SCHEMA as any).properties.sub_category.properties.value.description,
-      ).includes(key),
+    'long sub_category table is NOT in the response schema',
+    !subCategoryKeys.some(
+      (key) => key.length > 6 && JSON.stringify(EXTRACTION_SCHEMA).includes(key),
     ),
-    'schema description drifted from the taxonomy',
+  );
+  // Short enums still are, so the model can choose from them.
+  const enumData = require('../src/data/taxonomy/enums.json') as {
+    color: string[];
+    gender: string[];
+    season: string[];
+  };
+  check(
+    'every colour is offered to the model',
+    enumData.color.every((c) => SYSTEM_INSTRUCTION.includes(c)),
+    enumData.color.filter((c) => !SYSTEM_INSTRUCTION.includes(c)),
+  );
+  check(
+    'every gender is offered to the model',
+    enumData.gender.every((g) => SYSTEM_INSTRUCTION.includes(g)),
+  );
+  check(
+    'every season is offered to the model',
+    enumData.season.every((s2) => SYSTEM_INSTRUCTION.includes(s2)),
   );
 
   section('Confidence screening');
@@ -325,53 +341,9 @@ async function main(): Promise<void> {
   check('newest record retained', getFlywheelRecord(idFor(CAP + 9)) !== undefined);
   flywheelDb.exec('DELETE FROM flywheel_training');
 
-  section('Bilingual Armenian export');
-  const bilingual = buildBilingualExport('890123456789', normalized);
-  check(
-    'country -> Armenian',
-    bilingual.fields.country_of_origin.value_hy === 'Վիետնամ',
-    bilingual.fields.country_of_origin,
-  );
-  check(
-    'sub_category -> Armenian',
-    bilingual.fields.sub_category.value_hy === 'տաբատ',
-    bilingual.fields.sub_category,
-  );
-  check('color -> Armenian', bilingual.fields.color.value_hy === 'կապույտ', bilingual.fields.color);
-  check(
-    'composition translated with percentages',
-    bilingual.fields.material.value_hy === '100% պոլիեսթեր',
-    bilingual.fields.material,
-  );
-  check(
-    'brand reproduced as-is (not translatable)',
-    bilingual.fields.brand_name.value_hy === 'Nike',
-    bilingual.fields.brand_name,
-  );
-  const csv = toBilingualCsv([bilingual]);
-  check('CSV has a header and one row', csv.trim().split('\r\n').length === 2, csv);
-  check('CSV includes Armenian columns', csv.includes('country_of_origin_hy'), csv.split('\r\n')[0]);
-
-  section('Material composition translation');
-  const runOn = translateMaterial('38% Cotton 27% Wool 20% Polyamide 15% Polyester');
-  check(
-    'run-on composition splits per fibre',
-    runOn.text === '38% բամբակ, 27% բուրդ, 20% պոլիամիդ, 15% պոլիեսթեր',
-    runOn,
-  );
-  const commaSeparated = translateMaterial('80% Wool, 20% Polyamide');
-  check('comma-separated composition', commaSeparated.text === '80% բուրդ, 20% պոլիամիդ', commaSeparated);
-  const slashSeparated = translateMaterial('95% Cotton / 5% Elastane');
-  check('slash-separated composition', slashSeparated.text === '95% բամբակ, 5% էլաստան', slashSeparated);
-  const bareFibre = translateMaterial('Cotton');
-  check('bare fibre name', bareFibre.text === 'բամբակ', bareFibre);
-  const unknownFibre = translateMaterial('60% Cotton 40% Unobtainium');
-  check(
-    'unknown fibre kept in English and flagged',
-    unknownFibre.text === '60% բամբակ, 40% Unobtainium' &&
-      unknownFibre.missing.includes('Unobtainium'),
-    unknownFibre,
-  );
+  // NOTE: the bilingual Armenian export moved out of scope — Armenian text and
+  // the numeric ids are dashboard concerns now (see dev_report.md §24). The
+  // reference tables carrying them live in reference_data/*.csv.
 
   // ------------------------------------------------------------------ result
   console.log(`\n${passed} passed, ${failed} failed`);

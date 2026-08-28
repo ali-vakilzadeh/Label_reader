@@ -1,6 +1,8 @@
 import Fuse from 'fuse.js';
 import type { IFuseOptions } from 'fuse.js';
 import subCategoriesData from '../data/taxonomy/subCategories.json';
+import brandsData from '../data/taxonomy/brands.json';
+import materialsData from '../data/taxonomy/materials.json';
 import enumsData from '../data/taxonomy/enums.json';
 import countriesData from '../data/taxonomy/countries.json';
 import { logger } from './logger';
@@ -28,6 +30,24 @@ function compact(input: string): string {
 export interface TaxonomyEntry {
   key: string;
   aliases: string[];
+}
+
+/**
+ * Taxonomy files may list a plain string or an object with aliases. Most of the
+ * client's 1,400+ entries need no aliases, and plain strings keep the JSON
+ * readable and hand-editable — which is the point of committing them as data.
+ *
+ *   "Pants"
+ *   { "key": "Pants", "aliases": ["Trousers", "Jeans"] }
+ */
+export type TaxonomySource = string | { key: string; aliases?: string[] };
+
+export function toEntries(source: TaxonomySource[]): TaxonomyEntry[] {
+  return source.map((entry) =>
+    typeof entry === 'string'
+      ? { key: entry, aliases: [] }
+      : { key: entry.key, aliases: entry.aliases ?? [] },
+  );
 }
 
 /** Flattened search record: one row per (key, searchable term) pair. */
@@ -63,6 +83,8 @@ export class FuzzyIndex {
   /** Memoised results; label vocabularies repeat heavily in a scanning shift. */
   private readonly cache = new Map<string, string | null>();
   private readonly fuse: Fuse<SearchRecord>;
+  /** Canonical keys, for exact membership tests. */
+  private readonly keys = new Set<string>();
   readonly label: string;
   readonly size: number;
 
@@ -70,6 +92,7 @@ export class FuzzyIndex {
     this.label = label;
     const records: SearchRecord[] = [];
     for (const entry of entries) {
+      this.keys.add(entry.key);
       for (const term of [entry.key, ...entry.aliases]) {
         const normalised = normalise(term);
         if (!normalised) continue;
@@ -125,6 +148,11 @@ export class FuzzyIndex {
     return best ? best.item.key : null;
   }
 
+  /** True when the text is already an exact canonical key (case-insensitive). */
+  isKnownKey(raw: string): boolean {
+    return this.exact.get(normalise(raw)) === raw.trim() || this.keys.has(raw.trim());
+  }
+
   /** Match, or fall back to the original text when no key is close enough. */
   matchOrKeep(raw: string): { value: string; matched: boolean } {
     const hit = this.match(raw);
@@ -132,53 +160,83 @@ export class FuzzyIndex {
   }
 }
 
-const enums = enumsData as Record<string, TaxonomyEntry[]>;
+const enums = enumsData as Record<string, TaxonomySource[]>;
 
 function requireEnum(name: string): TaxonomyEntry[] {
   const entries = enums[name];
   if (!entries) throw new Error(`Taxonomy enum "${name}" missing from enums.json`);
-  return entries;
+  return toEntries(entries);
 }
 
-/** Countries are stored as {code,name}; the ISO code doubles as an alias. */
-const countryEntries: TaxonomyEntry[] = (countriesData as { code: string; name: string }[]).map(
-  (country) => ({ key: country.name, aliases: [country.code] }),
-);
-
+/**
+ * Two kinds of taxonomy, per the client's decision:
+ *
+ *  - CONSTRAINED enums are short enough to list in the Gemini prompt, so the
+ *    model chooses from them directly and the value is used as received.
+ *  - MATCHED taxonomies are far too long to prompt with (295 sub-categories,
+ *    839 brands). Gemini reports what it literally sees on the label, and this
+ *    local matcher replaces that free text with the closest table entry.
+ */
 export const subCategoryIndex = new FuzzyIndex(
-  subCategoriesData as TaxonomyEntry[],
+  toEntries(subCategoriesData as TaxonomySource[]),
   'sub_category',
 );
-export const countryIndex = new FuzzyIndex(countryEntries, 'country_of_origin');
+export const brandIndex = new FuzzyIndex(toEntries(brandsData as TaxonomySource[]), 'brand_name');
+export const countryIndex = new FuzzyIndex(
+  toEntries(countriesData as TaxonomySource[]),
+  'country_of_origin',
+);
+export const materialIndex = new FuzzyIndex(
+  toEntries(materialsData as TaxonomySource[]),
+  'material',
+);
+
 export const categoryIndex = new FuzzyIndex(requireEnum('category'), 'category');
 export const colorIndex = new FuzzyIndex(requireEnum('color'), 'color');
 export const genderIndex = new FuzzyIndex(requireEnum('gender'), 'gender');
 export const seasonIndex = new FuzzyIndex(requireEnum('season'), 'season');
 
 /**
- * Comma-separated canonical keys per field, for building the Gemini system
- * instruction and response schema. Sharing this with the matcher guarantees the
- * prompt can never offer a value the normaliser does not recognise.
+ * Fields whose free-text Gemini output is replaced by a local table selection.
+ * These lists are NEVER sent to the model.
  */
-export const TAXONOMY_KEYS = {
-  category: requireEnum('category').map((entry) => entry.key).join(', '),
-  color: requireEnum('color').map((entry) => entry.key).join(', '),
-  gender: requireEnum('gender').map((entry) => entry.key).join(', '),
-  season: requireEnum('season').map((entry) => entry.key).join(', '),
-  sub_category: (subCategoriesData as TaxonomyEntry[]).map((entry) => entry.key).join(', '),
+export const MATCHED_FIELDS = {
+  sub_category: subCategoryIndex,
+  brand_name: brandIndex,
+  country_of_origin: countryIndex,
+  material: materialIndex,
 } as const;
 
-/** Fields that get snapped to a canonical key, and the index that does it. */
-export const FIELD_INDEXES: Record<string, FuzzyIndex> = {
-  sub_category: subCategoryIndex,
-  country_of_origin: countryIndex,
+/**
+ * Fields the model is constrained to choose from. Their values are used exactly
+ * as returned — the matcher is not applied.
+ */
+export const CONSTRAINED_FIELDS = {
   category: categoryIndex,
   color: colorIndex,
   gender: genderIndex,
   season: seasonIndex,
-};
+} as const;
+
+/**
+ * Comma-separated keys for the Gemini system instruction and response schema.
+ * Only the constrained enums appear here; adding a long taxonomy would blow up
+ * the prompt and is exactly what the matched-field design avoids.
+ */
+export const TAXONOMY_KEYS = {
+  category: requireEnum('category').map((e) => e.key).join(', '),
+  color: requireEnum('color').map((e) => e.key).join(', '),
+  gender: requireEnum('gender').map((e) => e.key).join(', '),
+  season: requireEnum('season').map((e) => e.key).join(', '),
+} as const;
+
+/** Back-compat alias used by the extraction pipeline. */
+export const FIELD_INDEXES: Record<string, FuzzyIndex> = { ...MATCHED_FIELDS };
 
 logger.info(
-  `Fuzzy indexes built — sub_category:${subCategoryIndex.size} country:${countryIndex.size} ` +
-    `category:${categoryIndex.size} color:${colorIndex.size} gender:${genderIndex.size} season:${seasonIndex.size}`,
+  'Taxonomy indexes built — matched: ' +
+    `sub_category:${subCategoryIndex.size} brand:${brandIndex.size} ` +
+    `country:${countryIndex.size} material:${materialIndex.size}; ` +
+    `constrained: category:${categoryIndex.size} color:${colorIndex.size} ` +
+    `gender:${genderIndex.size} season:${seasonIndex.size}`,
 );

@@ -19,6 +19,7 @@ import {
   probeCredentials,
   reloadGeminiClient,
 } from './geminiService';
+import { seedTestAccounts } from '../db/appUsers';
 import {
   applyVisionSettings,
   fingerprintOf,
@@ -413,6 +414,10 @@ export function startControlService(): void {
 
   raiseEvent('SERVER_STARTED', `Middleware started on port ${env.port}.`);
   resolveEvent('SERVER_STARTED');
+
+  // Bootstrap operators before the first heartbeat, so a device can log in
+  // the moment the server is up.
+  seedTestAccounts(env.seedTestAccounts);
 
   evaluateCredentialState();
   publishHeartbeat();

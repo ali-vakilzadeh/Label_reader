@@ -69,6 +69,11 @@ export const env = {
   /** Minimum length enforced on operator passwords set through the UI. */
   passwordMinLength: numeric('PASSWORD_MIN_LENGTH', 8),
   /**
+   * Seeds three throwaway operator accounts on a fresh install so devices can be
+   * tested before the Web UI exists. Only fires when no accounts exist at all.
+   */
+  seedTestAccounts: optional('SEED_TEST_ACCOUNTS', 'true') === 'true',
+  /**
    * Whether a username with no operator account may still log in with the shared
    * APP_MASTER_PASSWORD. Keeps existing devices working during migration; set
    * false once every device has its own account.

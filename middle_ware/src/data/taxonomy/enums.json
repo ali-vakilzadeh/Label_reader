@@ -1,20 +1,6 @@
 {
   "category": [
     {
-      "key": "shoe",
-      "aliases": [
-        "shoes",
-        "footwear",
-        "sneaker",
-        "sneakers",
-        "boot",
-        "boots",
-        "sandal",
-        "sandals",
-        "trainers"
-      ]
-    },
-    {
       "key": "clothing",
       "aliases": [
         "clothes",
@@ -25,233 +11,66 @@
       ]
     },
     {
+      "key": "shoe",
+      "aliases": [
+        "shoes",
+        "footwear",
+        "sneakers",
+        "boots",
+        "sandals"
+      ]
+    },
+    {
       "key": "accessories",
       "aliases": [
         "accessory",
-        "add-on",
-        "extras",
         "jewellery",
         "jewelry"
       ]
     }
   ],
   "color": [
-    {
-      "key": "black",
-      "aliases": [
-        "jet black",
-        "onyx",
-        "noir",
-        "coal"
-      ]
-    },
-    {
-      "key": "white",
-      "aliases": [
-        "off-white",
-        "ivory",
-        "cream",
-        "ecru",
-        "snow"
-      ]
-    },
-    {
-      "key": "blue",
-      "aliases": [
-        "navy",
-        "navy blue",
-        "denim",
-        "royal blue",
-        "sky blue",
-        "teal",
-        "turquoise",
-        "indigo",
-        "cobalt"
-      ]
-    },
-    {
-      "key": "red",
-      "aliases": [
-        "crimson",
-        "burgundy",
-        "maroon",
-        "scarlet",
-        "wine",
-        "pink",
-        "magenta",
-        "fuchsia"
-      ]
-    },
-    {
-      "key": "orange",
-      "aliases": [
-        "coral",
-        "peach",
-        "apricot",
-        "rust",
-        "tangerine",
-        "salmon"
-      ]
-    },
-    {
-      "key": "yellow",
-      "aliases": [
-        "mustard",
-        "gold",
-        "golden",
-        "lemon",
-        "amber",
-        "ochre"
-      ]
-    },
-    {
-      "key": "brown",
-      "aliases": [
-        "beige",
-        "tan",
-        "khaki",
-        "camel",
-        "taupe",
-        "chocolate",
-        "coffee",
-        "sand",
-        "caramel"
-      ]
-    },
-    {
-      "key": "green",
-      "aliases": [
-        "olive",
-        "forest green",
-        "mint",
-        "lime",
-        "sage",
-        "emerald",
-        "khaki green"
-      ]
-    },
-    {
-      "key": "gray",
-      "aliases": [
-        "charcoal",
-        "grey",
-        "silver",
-        "slate",
-        "graphite",
-        "heather grey",
-        "ash"
-      ]
-    }
+    "Red",
+    "Yellow",
+    "Green",
+    "Blue",
+    "Purple",
+    "Grey",
+    "Orange",
+    "Brown",
+    "White",
+    "Pink",
+    "Turquoise",
+    "Ivory",
+    "Cream",
+    "Multicolored",
+    "Black",
+    "Gold",
+    "Silver",
+    "Milk",
+    "Dark red",
+    "Blue - Dark",
+    "Khaki",
+    "Blue - Navy",
+    "Green-Blue",
+    "Blue - Light",
+    "Black - White",
+    "no color"
   ],
   "gender": [
-    {
-      "key": "male",
-      "aliases": [
-        "men",
-        "mens",
-        "men's",
-        "man",
-        "boy adult",
-        "homme",
-        "herren"
-      ]
-    },
-    {
-      "key": "female",
-      "aliases": [
-        "women",
-        "womens",
-        "women's",
-        "woman",
-        "ladies",
-        "femme",
-        "damen"
-      ]
-    },
-    {
-      "key": "unisex",
-      "aliases": [
-        "uni-sex",
-        "both",
-        "any gender",
-        "all",
-        "neutral"
-      ]
-    },
-    {
-      "key": "kids-boy",
-      "aliases": [
-        "boy",
-        "boys",
-        "kids boy",
-        "junior boy",
-        "child boy"
-      ]
-    },
-    {
-      "key": "kids-girl",
-      "aliases": [
-        "girl",
-        "girls",
-        "kids girl",
-        "junior girl",
-        "child girl"
-      ]
-    },
-    {
-      "key": "newborn",
-      "aliases": [
-        "baby",
-        "infant",
-        "toddler",
-        "0-3 months",
-        "bebe"
-      ]
-    }
+    "Men",
+    "Women",
+    "Girls",
+    "Boys",
+    "Unisex",
+    "Baby Girl",
+    "Baby Boy"
   ],
   "season": [
-    {
-      "key": "spring",
-      "aliases": [
-        "ss",
-        "spring collection"
-      ]
-    },
-    {
-      "key": "summer",
-      "aliases": [
-        "ss",
-        "hot weather",
-        "summer collection"
-      ]
-    },
-    {
-      "key": "fall",
-      "aliases": [
-        "autumn",
-        "fw",
-        "fall/winter",
-        "autumn/winter"
-      ]
-    },
-    {
-      "key": "winter",
-      "aliases": [
-        "fw",
-        "cold weather",
-        "winter collection"
-      ]
-    },
-    {
-      "key": "all-seasons",
-      "aliases": [
-        "all season",
-        "all-season",
-        "four seasons",
-        "year-round",
-        "any season",
-        "all"
-      ]
-    }
+    "Summer",
+    "Autumn",
+    "Spring",
+    "Winter",
+    "All Seasons"
   ]
 }

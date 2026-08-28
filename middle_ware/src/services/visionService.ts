@@ -22,7 +22,7 @@ import {
   persistImages,
   readImageAsInline,
 } from './storageService';
-import { FIELD_INDEXES } from '../utils/fuzzyMatcher';
+import { CONSTRAINED_FIELDS, MATCHED_FIELDS } from '../utils/fuzzyMatcher';
 import { clampConfidence, resolveWeights } from '../utils/weights';
 import { logger } from '../utils/logger';
 import { ApiError } from '../middleware/errorHandler';
@@ -81,17 +81,30 @@ export function normalizeExtraction(raw: GeminiRawExtraction): ExtractedData {
       continue;
     }
 
-    const index = FIELD_INDEXES[field];
-    if (!index) {
-      data[field] = { value, confidence };
+    // REPORTED fields: Gemini transcribed what it saw, and the local matcher
+    // replaces that free text with the closest entry from the reference table.
+    const index = MATCHED_FIELDS[field as keyof typeof MATCHED_FIELDS];
+    if (index) {
+      const snapped = index.matchOrKeep(value);
+      if (!snapped.matched) {
+        // Nothing close enough. The transcription is kept rather than forced
+        // onto a wrong table entry — a wrong key is worse than an unmatched one.
+        logger.debug(`No table match for ${field}="${value}"; keeping what was read.`);
+      }
+      data[field] = { value: snapped.value, confidence };
       continue;
     }
 
-    const snapped = index.matchOrKeep(value);
-    if (!snapped.matched) {
-      logger.debug(`No taxonomy match for ${field}="${value}"; keeping raw value.`);
+    // CONSTRAINED fields: the model chose from a list we gave it, so the value
+    // is used as returned. Off-list answers are logged, never silently rewritten
+    // — quietly "correcting" the model would hide prompt drift.
+    const constrained = CONSTRAINED_FIELDS[field as keyof typeof CONSTRAINED_FIELDS];
+    if (constrained && !constrained.isKnownKey(value)) {
+      logger.warn(
+        `${field}="${value}" is not one of the allowed values; passing it through unchanged.`,
+      );
     }
-    data[field] = { value: snapped.value, confidence };
+    data[field] = { value, confidence };
   }
 
   return data;

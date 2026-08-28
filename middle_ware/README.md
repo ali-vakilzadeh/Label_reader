@@ -13,23 +13,67 @@ image-render calls.
 
 ```bash
 npm install
-cp .env.example .env          # then fill in JWT_SECRET, APP_MASTER_PASSWORD, GEMINI_API_KEY
-npm run convert:translations  # data/translations.csv -> data/legalArmenianMap.json
+cp .env.example .env   # then fill in JWT_SECRET, APP_MASTER_PASSWORD, GEMINI_API_KEY
 npm run build
-npm start                     # or: npm run dev
+npm start              # or: npm run dev
 ```
 
-`npm test` runs the offline smoke suite (55 checks, no API key needed).
+`npm run test:all` runs every offline suite — no API key or network needed.
+
+### Test operator accounts
+
+On a **fresh install** the server seeds three throwaway accounts so devices can be tested before
+the Web UI exists:
+
+| Username | Password |
+|---|---|
+| `minelli` | `minelli` |
+| `karen` | `karen` |
+| `ali` | `ali` |
+
+They are created only when no accounts exist at all, so they can never resurrect an account an
+administrator removed. **Set `SEED_TEST_ACCOUNTS=false` before production** — the boot log warns
+about them every time until you do.
 
 ---
+
+## How extraction works
+
+Two kinds of field, handled deliberately differently:
+
+| | Fields | Gemini's job | Middleware's job |
+|---|---|---|---|
+| **Reported** | `sub_category`, `brand_name`, `country_of_origin`, `material` | Transcribe what is printed on the label, verbatim. **No option list is sent.** | A local selector replaces the transcription with the closest entry from the client table |
+| **Constrained** | `category`, `color`, `gender`, `season` | Choose one option from the list in the prompt | Value used **exactly as returned** |
+
+The reference tables run to 1,441 entries (295 sub-categories, 839 brands, 222 countries,
+85 materials). Sending them on every request would bloat cost and latency, and push the model
+toward picking a plausible-looking option instead of reading the label. So it reads, and the
+server decides.
+
+When nothing in the table is close enough, the transcription is kept unchanged — a wrong table
+entry is worse than an unmatched one.
+
+**Tables live as committed, hand-editable data**, not code:
+
+```
+middle_ware/src/data/taxonomy/*.json   English only — what the middleware matches against
+reference_data/*.csv                   english, armenian, id — for the dashboard
+```
+
+Armenian text and the numeric ids are **dashboard-only**; the middleware neither stores nor
+emits them. Customs codes are dashboard-only too. To change a table, edit the file — no build
+step, no parser.
 
 ## Endpoints
 
 | Method | Path | Auth | Notes |
 | --- | --- | --- | --- |
 | `GET` | `/health` | none | Fast startup check for the Android client |
-| `POST` | `/api/v1/auth/login` | none | Master password → 30-day JWT |
-| `POST` | `/api/v1/vision/extract` | Bearer | multipart, ≤8 images; the main pipeline |
+| `POST` | `/api/v1/auth/login` | none | Operator account or master password → 30-day JWT |
+| `POST` | `/api/v1/vision/extract` | Bearer | multipart, ≤8 images. **Always 202** — stores and queues |
+| `GET` | `/api/v1/vision/result/:apparel_id` | Bearer | Fetch one result; never purged |
+| `GET` | `/api/v1/vision/results?ids=` | Bearer | Batch fetch, max 100 ids |
 | `PUT` | `/api/v1/flywheel/confirm/:apparel_id` | Bearer + key | **Hidden** — binds ground truth |
 | `GET` | `/api/v1/flywheel/stats` | Bearer + key | **Hidden** — buffer occupancy |
 | `GET` | `/api/v1/flywheel/sample/:apparel_id` | Bearer + key | **Hidden** — inspect one sample |
@@ -46,13 +90,19 @@ POST /api/v1/vision/extract
         │                        rebind under new apparel_id, return   (Gemini never called)
         │
         └── otherwise ─────────► persist images to uploads/<apparel_id>/
-                                 Gemini vision call (retry ×3, optional fallback model)
-                                 weights array  ──► netto / brutto
-                                 free text      ──► canonical enum keys (Fuse.js)
-                                 write server_scans.db
+                                 write server_scans.db (extraction_status = PENDING)
+                                 return 202 + PENDING_AI + catalog URL   ◄── no AI call here
+                                              │
+        background drain worker ──────────────┘
+                                 Gemini vision call (retry, optional fallback model)
+                                 weights array   ──► netto / brutto
+                                 reported fields ──► local table selection
                                  screen confidences ──► flywheel.db if any field is low
-                                 return payload + pre-generated catalog URL
+                                 extraction_status = COMPLETED
 ```
+
+The submit path never contacts the AI, so it returns in milliseconds and an outage costs
+latency, never data. The device polls `/vision/result/:apparel_id` for the outcome.
 
 `catalog_image_url` is computed synchronously from `SERVER_HOST` and returned immediately —
 the file it points at is produced by the 20:00 cron job that night.
@@ -67,12 +117,12 @@ mixed-unit pair (`1.2 kg` vs `950g`) ranks correctly while the operator-facing s
 preserved verbatim. One reading → `netto = brutto`. Zero readings → both `""` at
 confidence `0.0`. See [`src/utils/weights.ts`](src/utils/weights.ts).
 
-**Fuzzy normalisation.** `sub_category`, `country_of_origin`, `category`, `color`,
-`gender` and `season` are snapped from free text onto canonical keys through three tiers:
-exact map → punctuation-stripped map → Fuse.js search. A memo cache fronts all three.
-Measured: **0.001 ms** cached, **1.4 ms** worst case (unmatchable input against the
-280-entry country index) — inside the 2 ms budget. Nothing is invented: text that clears
-no threshold is passed through unchanged. See [`src/utils/fuzzyMatcher.ts`](src/utils/fuzzyMatcher.ts).
+**Local table selection.** The four reported fields are snapped onto client table entries
+through three tiers: exact map → punctuation-stripped map → Fuse.js search, with a memo cache
+in front. Measured at real table sizes: **0.001 ms** cached, **0.0006 ms** for a realistic
+mixed workload, **1.5 ms** worst case (unmatchable text against the 839-entry brand index).
+Nothing is invented — text that clears no threshold passes through unchanged.
+See [`src/utils/fuzzyMatcher.ts`](src/utils/fuzzyMatcher.ts).
 
 **Cloning.** `cloned_from` short-circuits the whole vision path. The child inherits the
 parent's image paths rather than duplicating bytes on disk.
@@ -125,24 +175,16 @@ Run it on demand with `npm run render:now`.
 
 ---
 
-## Bilingual Armenian export
+## Bilingual export — dashboard scope
 
-`scripts/convertTranslations.ts` converts `data/translations.csv` (columns `english`,
-`armenian`, optional `domain`) into `data/legalArmenianMap.json`. It never runs in the
-request path.
+Armenian text and the numeric taxonomy ids are **not used by the middleware**. It works in
+canonical English and emits English. The dashboard joins to Armenian and the ids using
+[`reference_data/*.csv`](../reference_data/), which carry `english, armenian, id` per table.
+Customs codes are likewise dashboard-only.
 
-[`src/services/exportService.ts`](src/services/exportService.ts) maps extracted English
-values to legal Armenian text and emits a BOM-prefixed bilingual CSV (Excel opens the
-Armenian script correctly). Material is handled specially — a composition string is split
-per fibre with percentages preserved:
-
-```
-38% Cotton 27% Wool 20% Polyamide 15% Polyester
-  -> 38% բամբակ, 27% բուրդ, 20% պոլիամիդ, 15% պոլիեսթեր
-```
-
-Lookup is strict by design: an unmapped term is reported in `missing_translations`, never
-guessed. A wrong Armenian legal term on a customs declaration is worse than a flagged gap.
+`src/services/exportService.ts`, `scripts/convertTranslations.ts` and `data/translations.csv`
+predate that decision and are no longer wired into the server. They are retained for now so the
+work can be moved to the dashboard rather than rewritten.
 
 ---
 
@@ -184,20 +226,14 @@ tests/                     smoke.ts, liveExtract.ts, cronCheck.ts
 
 ---
 
-## Two things needing your input
+## Open item
 
-**1. `sub_category` taxonomy is a placeholder.** The build spec says 253 options; the locked
-contract lists 14. The matcher reads its list from
-[`src/data/taxonomy/subCategories.json`](src/data/taxonomy/subCategories.json), currently
-seeded with the contract's 14. Drop the real 253-item list into that file — same
-`{ "key": ..., "aliases": [...] }` shape — and both the matcher and the export pick it up
-with no code change. Add matching rows to `data/translations.csv` and re-run
-`npm run convert:translations` for the Armenian side.
+The client reference tables changed the values on the wire: `color` now has 26 options (was 9),
+`gender` uses `Men`/`Women` (was `male`/`female`), `season` uses `Autumn` (was `fall`), and
+`sub_category` has 295 entries (was 14). `api_contract.md` still documents the old enums and
+needs a coordinated update with the Android developer.
 
-**2. `data/translations.csv` is a seed, not the client's file.** It contains 140 terms I
-wrote to cover every enum value, the common apparel origin countries, and the usual fibre
-names. Replace it with the client's authoritative legal wording before any real customs
-export.
+---
 
 ## Model note
 

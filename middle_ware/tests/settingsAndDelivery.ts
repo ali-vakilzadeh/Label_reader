@@ -126,10 +126,24 @@ async function main(): Promise<void> {
     .prepare('SELECT * FROM vision_settings_pending ORDER BY id DESC LIMIT 1')
     .get() as { status: string; result_detail: string; api_key: string | null };
 
-  const quotaBlocked = applied.status === 'REJECTED' && /RATE_LIMIT_DAY|BILLING/.test(applied.result_detail);
+  const quotaBlocked =
+    applied.status === 'REJECTED' && /RATE_LIMIT_DAY|BILLING/.test(applied.result_detail);
+  // An unreachable or busy API leaves the submission PENDING by design: an
+  // unverified key is never adopted. Not a failure, and not a pass either.
+  const inconclusive = applied.status === 'PENDING';
 
-  if (quotaBlocked) {
-    skip('key adopted', `account quota exhausted (${applied.result_detail})`);
+  // Holds in every case: nothing unverified is ever put into service.
+  check(
+    'no unverified key was adopted',
+    applied.status === 'APPLIED' || storedApiKey() === null,
+    applied.status,
+  );
+
+  if (quotaBlocked || inconclusive) {
+    const why = quotaBlocked
+      ? `account quota exhausted (${applied.result_detail})`
+      : `validation inconclusive (${applied.result_detail})`;
+    skip('key adopted', why);
     skip('vision resumed', 'depends on adoption');
   } else {
     check('submission APPLIED', applied.status === 'APPLIED', applied);

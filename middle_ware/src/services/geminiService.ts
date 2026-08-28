@@ -218,21 +218,36 @@ function describe(error: unknown): string {
 }
 
 /**
- * The allowed-value lists are read from the same taxonomy files the fuzzy
- * matcher indexes, so the prompt and the normaliser can never disagree about
- * what a valid key is. Growing sub_category from 14 to 253 options updates this
- * instruction automatically.
+ * Two kinds of field, deliberately handled differently.
+ *
+ * REPORTED fields (brand_name, country_of_origin, sub_category, material) are
+ * transcription tasks: the model reports what it can actually read on the label,
+ * verbatim. Their reference tables run to hundreds of entries (295 sub-categories,
+ * 839 brands) and are NEVER sent to the model — listing them would bloat every
+ * request, cost tokens on every scan, and push the model toward guessing a
+ * plausible-looking option instead of reading the label. A local matcher maps the
+ * reported text onto the table afterwards.
+ *
+ * CONSTRAINED fields (category, color, gender, season) are short judgement calls
+ * where the allowed set is small enough to state, so the model picks from it and
+ * the answer is used exactly as returned. Those lists come from the same taxonomy
+ * files the matcher indexes, so prompt and server can never disagree.
  */
 export const SYSTEM_INSTRUCTION = [
   'Analyze apparel label and scale display images.',
-  'Extract brand_name, country_of_origin, size, material, and original_price.',
+  'Report EXACTLY what is printed on the labels for these fields, transcribing',
+  'the text as it appears and never substituting a similar word:',
+  'brand_name, country_of_origin, sub_category (the garment type named on the',
+  'label or clearly visible in the photo), and material (the fibre composition).',
+  'If one of these is not legible, return an empty string rather than a guess.',
+  'Extract size and original_price as printed.',
   'Read weights from scale displays into an array.',
-  `Infer dominant color from [${TAXONOMY_KEYS.color}],`,
-  `category from [${TAXONOMY_KEYS.category}],`,
-  `sub_category from [${TAXONOMY_KEYS.sub_category}],`,
-  `gender from [${TAXONOMY_KEYS.gender}],`,
-  `and season from [${TAXONOMY_KEYS.season}].`,
-  'Choose the single closest option from each list; do not invent new values.',
+  'For the following fields choose exactly one option from the list given:',
+  `color from [${TAXONOMY_KEYS.color}];`,
+  `category from [${TAXONOMY_KEYS.category}];`,
+  `gender from [${TAXONOMY_KEYS.gender}];`,
+  `season from [${TAXONOMY_KEYS.season}].`,
+  'Do not invent values outside those four lists.',
   'RULE: Return a confidence score between 0.0 and 1.0 for EVERY field.',
   'If a field is missing, guess ONLY if confidence > 0.50.',
   'Otherwise return empty string with 0.0 confidence.',
@@ -256,14 +271,21 @@ function confidenceField(description: string): Schema {
 export const EXTRACTION_SCHEMA: Schema = {
   type: Type.OBJECT,
   properties: {
-    brand_name: confidenceField('Brand or designer name printed on the label.'),
-    country_of_origin: confidenceField('Country of manufacture, e.g. "Vietnam".'),
+    brand_name: confidenceField('Brand name exactly as printed on the label.'),
+    country_of_origin: confidenceField(
+      'Country of manufacture exactly as printed, e.g. "Made in Viet Nam".',
+    ),
     size: confidenceField('Size as printed, e.g. "XL", "EU 42", "32W x 34L".'),
     color: confidenceField(`Dominant color, one of: ${TAXONOMY_KEYS.color}.`),
-    material: confidenceField('Fabric composition, e.g. "100% Polyester".'),
+    material: confidenceField(
+      'Fibre composition exactly as printed, e.g. "80% Cotton 20% Polyester".',
+    ),
     original_price: confidenceField('Retail price including currency symbol.'),
     category: confidenceField(`One of: ${TAXONOMY_KEYS.category}.`),
-    sub_category: confidenceField(`One of: ${TAXONOMY_KEYS.sub_category}.`),
+    sub_category: confidenceField(
+      'Garment type named on the label or clearly visible, in your own words. ' +
+        'Do not force it into a category list.',
+    ),
     gender: confidenceField(`One of: ${TAXONOMY_KEYS.gender}.`),
     season: confidenceField(`One of: ${TAXONOMY_KEYS.season}.`),
     weights: {
