@@ -43,7 +43,7 @@ This app is customized to match FitOut.AM requirements as follows:
 - Export daily results using native android sharing
 - Retain all database in hidden cache to future reference
 
-### Requirements:
+### Device Requirements:
 
 - Mobile Device with Android 8.0 or later
 - Back camera - 10 Mega pixel or better + Auto/Manual Flash or Torch
@@ -52,11 +52,6 @@ This app is customized to match FitOut.AM requirements as follows:
 
 ### Usage:
 
-- Ask your admin for server API address, username and pass (user can start without a connection, but AI vision & results will not work until a valid server connection)
-- Download and Install .apk application on your mobile device.
-- (First use only) Tap on Setting page (button-right of the app screen) > Input server address, username and password > save settings
-- Tap on camera icon (Bottom left) > Start a new record by scanning item barcode (Apparel ID) > Take pictures > Finish
-- Items will be Automatically sent to server for AI Vision >> Items will wait until internet connection is available.
-- Successful items will return for your review. Tap on Review results to check and confirm. Confirmed results will be stored for reporting.
-- To send daily reports, tap on "export and send" to share result files using Android sharing.
-
+- [Mobile App setup and usage manual (English)](/mobile_app/user_manual/label-reader-operator-user-guide.pdf)
+- [Mobile App setup and usage manual (Armenian)](/mobile_app/user_manual/label-reader-operator-user-guide(AM).pdf)
+- [Backend Server setup manual (English)](/middle_ware/setup.md)
