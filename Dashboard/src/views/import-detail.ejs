@@ -1,0 +1,24 @@
+<%- include('partials/head') %>
+<div class="card">
+  <h1>Import <%= record.id %> — <%= record.filename %></h1>
+  <p class="muted">
+    <%= new Date(record.uploaded_at).toISOString().slice(0,16).replace('T',' ') %> by <%= record.uploaded_by %>
+    · policy <%= record.policy %> · digest <code><%= record.sha256.slice(0, 16) %>…</code>
+  </p>
+  <div class="scroll">
+    <table class="grid">
+      <thead><tr><th>Line</th><th>Barcode</th><th>Outcome</th><th>Detail</th></tr></thead>
+      <tbody>
+        <% rows.forEach(r => { %>
+          <tr>
+            <td><%= r.line_no %></td>
+            <td><% if (r.apparel_id) { %><a href="/items/<%= encodeURIComponent(r.apparel_id) %>"><%= r.apparel_id %></a><% } %></td>
+            <td><%= r.outcome %></td>
+            <td><%= r.detail || '' %></td>
+          </tr>
+        <% }) %>
+      </tbody>
+    </table>
+  </div>
+</div>
+<%- include('partials/foot') %>

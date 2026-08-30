@@ -1,0 +1,23 @@
+<%#
+  Inline SVG bar chart. No charting library — a new chart is one SQL query plus one
+  include of this file. Expects: heading (string), points ([{label, value}]).
+%>
+<%
+  const max = points.reduce((m, p) => Math.max(m, p.value), 0) || 1;
+  const barH = 22, gap = 6, labelW = 150, chartW = 420;
+  const height = points.length * (barH + gap) + 8;
+%>
+<section class="chart">
+  <h3><%= heading %></h3>
+  <% if (!points.length) { %>
+    <p class="muted small">No data for these filters.</p>
+  <% } else { %>
+    <svg viewBox="0 0 <%= labelW + chartW + 60 %> <%= height %>" role="img" aria-label="<%= heading %>">
+      <% points.forEach((p, i) => { const y = i * (barH + gap); const w = Math.max(1, (p.value / max) * chartW); %>
+        <text x="<%= labelW - 8 %>" y="<%= y + barH * 0.7 %>" text-anchor="end" class="c-label"><%= p.label %></text>
+        <rect x="<%= labelW %>" y="<%= y %>" width="<%= w %>" height="<%= barH %>" class="c-bar" rx="2"></rect>
+        <text x="<%= labelW + w + 6 %>" y="<%= y + barH * 0.7 %>" class="c-value"><%= p.value %></text>
+      <% }) %>
+    </svg>
+  <% } %>
+</section>

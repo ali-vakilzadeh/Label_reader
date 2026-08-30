@@ -1,0 +1,952 @@
+﻿ID,CN_Key,CN_Code,Name
+7,010100000080,0101,"Live horses, asses, mules and hinnies"
+15,010200000080,0102,Live bovine animals
+51,010300000080,0103,Live swine
+62,010400000080,0104,Live sheep and goats
+71,010500000080,0105,"Live poultry, that is to say, fowls of the sp"
+91,010600000080,0106,Other live animals
+113,020100000080,0201,"Meat of bovine animals, fresh or chilled"
+121,020200000080,0202,"Meat of bovine animals, frozen"
+132,020300000080,0203,"Meat of swine, fresh, chilled or frozen"
+169,020400000080,0204,"Meat of sheep or goats, fresh, chilled or fro"
+210,020600000080,0206,"Edible offal of bovine animals, swine, sheep,"
+238,020700000080,0207,"Meat and edible offal, of the poultry of head"
+402,020800000080,0208,"Other meat and edible meat offal, fresh, chil"
+419,020900000080,0209,"Pig fat, free of lean meat, and poultry fat,"
+426,021000000080,0210,"Meat and edible meat offal, salted, in brine,"
+491,030100000080,0301,Live fish
+513,030200000080,0302,"Fish, fresh or chilled, excluding fish fillet"
+636,030300000080,0303,"Fish, frozen, excluding fish fillets and othe"
+770,030400000080,0304,Fish fillets and other fish meat (whether or
+913,030500000080,0305,"Fish, dried, salted or in brine; smoked fish,"
+968,030600000080,0306,"Crustaceans, whether in shell or not, live, f"
+1038,030700000080,0307,"Molluscs, whether in shell or not, live, fres"
+1111,030800000080,0308,Aquatic invertebrates other than crustaceans
+1129,040100000080,0401,"Milk and cream, not concentrated nor containi"
+1153,040200000080,0402,"Milk and cream, concentrated or containing ad"
+1196,040300000080,0403,"Buttermilk, curdled milk and cream, yogurt, k"
+1245,040400000080,0404,"Whey, whether or not concentrated or containi"
+1294,040500000080,0405,Butter and other fats and oils derived from m
+1310,040600000080,0406,Cheese and curd
+1368,040700000080,0407,"Birds' eggs, in shell, fresh, preserved or co"
+1384,040800000080,0408,"Birds' eggs, not in shell, and egg yolks, fre"
+1405,050200000080,0502,"Pigs', hogs' or boars' bristles and hair; bad"
+1409,050500000080,0505,"Skins and other parts of birds, with their fe"
+1414,050600000080,0506,"Bones and horn-cores, unworked, defatted, sim"
+1417,050700000080,0507,"Ivory, tortoiseshell, whalebone and whalebone"
+1422,051100000080,0511,Animal products not elsewhere specified or in
+1436,060100000080,0601,"Bulbs, tubers, tuberous roots, corms, crowns"
+1447,060200000080,0602,"Other live plants (including their roots), cu"
+1481,060300000080,0603,Cut flowers and flower buds of a kind suitabl
+1493,060400000080,0604,"Foliage, branches and other parts of plants,"
+1509,070100000080,0701,"Potatoes, fresh or chilled"
+1517,070300000080,0703,"Onions, shallots, garlic, leeks and other all"
+1525,070400000080,0704,"Cabbages, cauliflowers, kohlrabi, kale and si"
+1531,070500000080,0705,Lettuce (Lactuca sativa) and chicory (Cichori
+1538,070600000080,0706,"Carrots, turnips, salad beetroot, salsify, ce"
+1547,070800000080,0708,"Leguminous vegetables, shelled or unshelled,"
+1551,070900000080,0709,"Other vegetables, fresh or chilled"
+1584,071000000080,0710,Vegetables (uncooked or cooked by steaming or
+1605,071100000080,0711,Vegetables provisionally preserved (for examp
+1621,071200000080,0712,"Dried vegetables, whole, cut, sliced, broken"
+1636,071300000080,0713,"Dried leguminous vegetables, shelled, whether"
+1654,071400000080,0714,"Manioc, arrowroot, salep, Jerusalem artichoke"
+1666,080100000080,0801,"Coconuts, Brazil nuts and cashew nuts, fresh"
+1677,080200000080,0802,"Other nuts, fresh or dried, whether or not sh"
+1706,080300000080,0803,"Bananas, including plantains, fresh or dried"
+1713,080400000080,0804,"Dates, figs, pineapples, avocados, guavas, ma"
+1721,080500000080,0805,"Citrus fruit, fresh or dried"
+1739,080600000080,0806,"Grapes, fresh or dried"
+1747,080700000080,0807,Melons (including watermelons) and papaws (pa
+1752,080800000080,0808,"Apples, pears and quinces, fresh"
+1760,080900000080,0809,"Apricots, cherries, peaches (including nectar"
+1771,081000000080,0810,"Other fruit, fresh"
+1791,081100000080,0811,"Fruit and nuts, uncooked or cooked by steamin"
+1823,081200000080,0812,"Fruit and nuts, provisionally preserved (for"
+1831,081300000080,0813,"Fruit, dried, other than that of headings 080"
+1855,090100000080,0901,"Coffee, whether or not roasted or decaffeinat"
+1865,090200000080,0902,"Tea, whether or not flavoured"
+1871,090400000080,0904,Pepper of the genus Piper; dried or crushed o
+1880,090500000080,0905,Vanilla
+1883,090600000080,0906,Cinnamon and cinnamon-tree flowers
+1888,090700000080,0907,"Cloves (whole fruit, cloves and stems)"
+1891,090800000080,0908,"Nutmeg, mace and cardamoms"
+1901,090900000080,0909,"Seeds of anise, badian, fennel, coriander, cu"
+1911,091000000080,0910,"Ginger, saffron, turmeric (curcuma), thyme, b"
+1937,100100000080,1001,Wheat and meslin
+1947,100200000080,1002,Rye
+1950,100300000080,1003,Barley
+1953,100400000080,1004,Oats
+1956,100500000080,1005,Maize (corn)
+1964,100600000080,1006,Rice
+2014,100700000080,1007,Grain sorghum
+2019,100800000080,1008,"Buckwheat, millet and canary seed; other cere"
+2035,110200000080,1102,Cereal flours other than of wheat or meslin
+2045,110300000080,1103,"Cereal groats, meal and pellets"
+2065,110400000080,1104,"Cereal grains otherwise worked (for example,"
+2107,110500000080,1105,"Flour, meal, powder, flakes, granules and pel"
+2110,110600000080,1106,"Flour, meal and powder of the dried leguminou"
+2118,110700000080,1107,"Malt, whether or not roasted"
+2127,110800000080,1108,Starches; inulin
+2139,120100000080,1201,"Soya beans, whether or not broken"
+2142,120200000080,1202,"Groundnuts, not roasted or otherwise cooked,"
+2151,120500000080,1205,"Rape or colza seeds, whether or not broken"
+2161,120700000080,1207,"Other oil seeds and oleaginous fruits, whethe"
+2184,120800000080,1208,Flours and meals of oil seeds or oleaginous f
+2187,120900000080,1209,"Seeds, fruit and spores, of a kind used for s"
+2217,121000000080,1210,"Hop cones, fresh or dried, whether or not gro"
+2222,121100000080,1211,Plants and parts of plants (including seeds a
+2230,121200000080,1212,"Locust beans, seaweeds and other algae, sugar"
+2247,121400000080,1214,"Swedes, mangolds, fodder roots, hay, lucerne"
+2253,130100000080,1301,"Lac; natural gums, resins, gum-resins and ole"
+2256,130200000080,1302,Vegetable saps and extracts; pectic substance
+2275,140100000080,1401,Vegetable materials of a kind used primarily
+2279,140400000080,1404,Vegetable products not elsewhere specified or
+2284,150100000080,1501,"Pig fat (including lard) and poultry fat, oth"
+2292,150200000080,1502,"Fats of bovine animals, sheep or goats, other"
+2305,150400000080,1504,"Fats and oils and their fractions, of fish or"
+2321,150700000080,1507,"Soya-bean oil and its fractions, whether or n"
+2328,150800000080,1508,"Groundnut oil and its fractions, whether or n"
+2335,150900000080,1509,"Olive oil and its fractions, whether or not r"
+2344,151100000080,1511,"Palm oil and its fractions, whether or not re"
+2355,151200000080,1512,"Sunflower-seed, safflower or cotton-seed oil"
+2372,151300000080,1513,"Coconut (copra), palm kernel or babassu oil a"
+2403,151400000080,1514,"Rape, colza or mustard oil and fractions ther"
+2418,151500000080,1515,Other fixed vegetable fats and oils (includin
+2461,151600000080,1516,Animal or vegetable fats and oils and their f
+2474,151700000080,1517,Margarine; edible mixtures or preparations of
+2495,152100000080,1521,"Vegetable waxes (other than triglycerides), b"
+2518,160200000080,1602,"Other prepared or preserved meat, meat offal"
+2579,160400000080,1604,Prepared or preserved fish; caviar and caviar
+2644,160500000080,1605,"Crustaceans, molluscs and other aquatic inver"
+2673,170100000080,1701,Cane or beet sugar and chemically pure sucros
+2689,170200000080,1702,"Other sugars, including chemically pure lacto"
+2720,170300000080,1703,Molasses resulting from the extraction or ref
+2723,170400000080,1704,Sugar confectionery (including white chocolat
+2744,180300000080,1803,"Cocoa paste, whether or not defatted"
+2749,180600000080,1806,Chocolate and other food preparations contain
+2781,190100000080,1901,"Malt extract; food preparations of flour, gro"
+2791,190200000080,1902,"Pasta, whether or not cooked or stuffed (with"
+2810,190400000080,1904,Prepared foods obtained by the swelling or ro
+2825,190500000080,1905,"Bread, pastry, cakes, biscuits and other bake"
+2864,200100000080,2001,"Vegetables, fruit, nuts and other edible part"
+2876,200200000080,2002,Tomatoes prepared or preserved otherwise than
+2890,200300000080,2003,"Mushrooms and truffles, prepared or preserved"
+2897,200400000080,2004,Other vegetables prepared or preserved otherw
+2910,200500000080,2005,Other vegetables prepared or preserved otherw
+2943,200700000080,2007,"Jams, fruit jellies, marmalades, fruit or nut"
+2967,200800000080,2008,"Fruit, nuts and other edible parts of plants,"
+3211,200900000080,2009,Fruit juices (including grape must) and veget
+3397,210100000080,2101,"Extracts, essences and concentrates, of coffe"
+3415,210200000080,2102,Yeasts (active or inactive); other single-cel
+3428,210300000080,2103,Sauces and preparations therefor; mixed condi
+3438,210400000080,2104,Soups and broths and preparations therefor; h
+3446,210600000080,2106,Food preparations not elsewhere specified or
+3462,220100000080,2201,"Waters, including natural or artificial miner"
+3469,220200000080,2202,"Waters, including mineral waters and aerated"
+3487,220400000080,2204,"Wine of fresh grapes, including fortified win"
+3668,220500000080,2205,Vermouth and other wine of fresh grapes flavo
+3688,220700000080,2207,Undenatured ethyl alcohol of an alcoholic str
+3691,220800000080,2208,Undenatured ethyl alcohol of an alcoholic str
+3789,230100000080,2301,"Flours, meals and pellets, of meat or meat of"
+3792,230200000080,2302,"Bran, sharps and other residues, whether or n"
+3807,230300000080,2303,Residues of starch manufacture and similar re
+3819,230600000080,2306,"Oilcake and other solid residues, whether or"
+3846,230900000080,2309,Preparations of a kind used in animal feeding
+3889,240100000080,2401,Unmanufactured tobacco; tobacco refuse
+3903,240200000080,2402,"Cigars, cheroots, cigarillos and cigarettes,"
+3909,240300000080,2403,Other manufactured tobacco and manufactured t
+3935,250400000080,2504,Natural graphite
+3938,250500000080,2505,"Natural sands of all kinds, whether or not co"
+3941,250600000080,2506,"Quartz (other than natural sands); quartzite,"
+3947,250800000080,2508,Other clays (not including expanded clays of
+3955,251000000080,2510,"Natural calcium phosphates, natural aluminium"
+3958,251100000080,2511,Natural barium sulphate (barytes); natural ba
+3962,251300000080,2513,"Pumice stone; emery; natural corundum, natura"
+3966,251500000080,2515,"Marble, travertine, ecaussine and other calca"
+3971,251600000080,2516,"Granite, porphyry, basalt, sandstone and othe"
+3977,251700000080,2517,"Pebbles, gravel, broken or crushed stone, of"
+3987,251800000080,2518,"Dolomite, whether or not calcined or sintered"
+3991,251900000080,2519,Natural magnesium carbonate (magnesite); fuse
+3997,252000000080,2520,Gypsum; anhydrite; plasters (consisting of ca
+4001,252200000080,2522,"Quicklime, slaked lime and hydraulic lime, ot"
+4005,252300000080,2523,"Portland cement, aluminous cement, slag cemen"
+4012,252400000080,2524,Asbestos
+4015,252500000080,2525,"Mica, including splittings; mica waste"
+4019,252600000080,2526,"Natural steatite, whether or not roughly trim"
+4023,252900000080,2529,Feldspar; leucite; nepheline and nepheline sy
+4029,253000000080,2530,Mineral substances not elsewhere specified or
+4034,260100000080,2601,"Iron ores and concentrates, including roasted"
+4049,261200000080,2612,Uranium or thorium ores and concentrates
+4056,261300000080,2613,Molybdenum ores and concentrates
+4060,261500000080,2615,"Niobium, tantalum, vanadium or zirconium ores"
+4063,261600000080,2616,Precious-metal ores and concentrates
+4066,261700000080,2617,Other ores and concentrates
+4073,262000000080,2620,"Slag, ash and residues (other than from the m"
+4091,262100000080,2621,"Other slag and ash, including seaweed ash (ke"
+4095,270100000080,2701,"Coal; briquettes, ovoids and similar solid fu"
+4103,270200000080,2702,"Lignite, whether or not agglomerated, excludi"
+4113,270700000080,2707,Oils and other products of the distillation o
+4131,270800000080,2708,"Pitch and pitch coke, obtained from coal tar"
+4137,271000000080,2710,Petroleum oils and oils obtained from bitumin
+4209,271100000080,2711,Petroleum gases and other gaseous hydrocarbon
+4233,271200000080,2712,"Petroleum jelly; paraffin wax, microcrystalli"
+4252,271300000080,2713,"Petroleum coke, petroleum bitumen and other r"
+4260,271400000080,2714,"Bitumen and asphalt, natural; bituminous or o"
+4268,280100000080,2801,"Fluorine, chlorine, bromine and iodine"
+4276,280400000080,2804,"Hydrogen, rare gases and other non-metals"
+4294,280500000080,2805,Alkali or alkaline-earth metals; rare-earth m
+4313,280600000080,2806,Hydrogen chloride (hydrochloric acid); chloro
+4318,280900000080,2809,Diphosphorus pentaoxide; phosphoric acid; pol
+4324,281100000080,2811,Other inorganic acids and other inorganic oxy
+4340,281200000080,2812,Halides and halide oxides of non-metals
+4353,281300000080,2813,Sulphides of non-metals; commercial phosphoru
+4359,281400000080,2814,"Ammonia, anhydrous or in aqueous solution"
+4362,281500000080,2815,Sodium hydroxide (caustic soda); potassium hy
+4368,281600000080,2816,"Hydroxide and peroxide of magnesium; oxides,"
+4372,281800000080,2818,"Artificial corundum, whether or not chemicall"
+4382,281900000080,2819,Chromium oxides and hydroxides
+4387,282000000080,2820,Manganese oxides
+4392,282100000080,2821,Iron oxides and hydroxides; earth colours con
+4397,282400000080,2824,Lead oxides; red lead and orange lead
+4400,282500000080,2825,Hydrazine and hydroxylamine and their inorgan
+4418,282600000080,2826,"Fluorides; fluorosilicates, fluoroaluminates"
+4428,282700000080,2827,"Chlorides, chloride oxides and chloride hydro"
+4449,282800000080,2828,Hypochlorites; commercial calcium hypochlorit
+4452,282900000080,2829,Chlorates and perchlorates; bromates and perb
+4460,283000000080,2830,"Sulphides; polysulphides, whether or not chem"
+4465,283100000080,2831,Dithionites and sulphoxylates
+4468,283200000080,2832,Sulphites; thiosulphates
+4472,283300000080,2833,Sulphates; alums; peroxosulphates (persulphat
+4489,283400000080,2834,Nitrites; nitrates
+4497,283500000080,2835,"Phosphinates (hypophosphites), phosphonates ("
+4511,283600000080,2836,Carbonates; peroxocarbonates (percarbonates);
+4525,283700000080,2837,"Cyanides, cyanide oxides and complex cyanides"
+4530,283900000080,2839,Silicates; commercial alkali metal silicates
+4535,284000000080,2840,Borates; peroxoborates (perborates)
+4545,284100000080,2841,Salts of oxometallic or peroxometallic acids
+4556,284200000080,2842,Other salts of inorganic acids or peroxoacids
+4562,284300000080,2843,Colloidal precious metals; inorganic or organ
+4573,284400000080,2844,Radioactive chemical elements and radioactive
+4610,284500000080,2845,Isotopes other than those of heading 2844; co
+4615,284600000080,2846,"Compounds, inorganic or organic, of rare-eart"
+4623,284900000080,2849,"Carbides, whether or not chemically defined"
+4635,285200000080,2852,"Inorganic or organic compounds of mercury, wh"
+4638,285300000080,2853,"Phosphides, whether or not chemically defined"
+4646,290100000080,2901,Acyclic hydrocarbons
+4654,290200000080,2902,Cyclic hydrocarbons
+4669,290300000080,2903,Halogenated derivatives of hydrocarbons
+4735,290400000080,2904,"Sulphonated, nitrated or nitrosated derivativ"
+4749,290500000080,2905,"Acyclic alcohols and their halogenated, sulph"
+4795,290600000080,2906,"Cyclic alcohols and their halogenated, sulpho"
+4807,290700000080,2907,Phenols; phenol-alcohols
+4823,290800000080,2908,"Halogenated, sulphonated, nitrated or nitrosa"
+4832,290900000080,2909,"Ethers, ether-alcohols, ether-phenols, ether-"
+4855,291000000080,2910,"Epoxides, epoxyalcohols, epoxyphenols and epo"
+4864,291200000080,2912,"Aldehydes, whether or not with other oxygen f"
+4880,291400000080,2914,"Ketones and quinones, whether or not with oth"
+4909,291500000080,2915,Saturated acyclic monocarboxylic acids and th
+4937,291600000080,2916,"Unsaturated acyclic monocarboxylic acids, cyc"
+4957,291700000080,2917,"Polycarboxylic acids, their anhydrides, halid"
+4980,291800000080,2918,Carboxylic acids with additional oxygen funct
+5006,291900000080,2919,"Phosphoric esters and their salts, including"
+5009,292000000080,2920,Esters of other inorganic acids of non-metals
+5024,292100000080,2921,Amine-function compounds
+5059,292200000080,2922,Oxygen-function amino-compounds
+5084,292300000080,2923,Quaternary ammonium salts and hydroxides; lec
+5090,292400000080,2924,Carboxyamide-function compounds; amide-functi
+5103,292500000080,2925,Carboxyimide-function compounds (including sa
+5113,292600000080,2926,Nitrile-function compounds
+5125,292900000080,2929,Compounds with other nitrogen function
+5129,293000000080,2930,Organo-sulphur compounds
+5145,293100000080,2931,Other organo-inorganic compounds
+5164,293200000080,2932,Heterocyclic compounds with oxygen hetero-ato
+5182,293300000080,2933,Heterocyclic compounds with nitrogen hetero-a
+5245,293400000080,2934,"Nucleic acids and their salts, whether or not"
+5258,293500000080,2935,Sulphonamides
+5268,293600000080,2936,"Provitamins and vitamins, natural or reproduc"
+5280,293700000080,2937,"Hormones, prostaglandins, thromboxanes and le"
+5293,293800000080,2938,"Glycosides, natural or reproduced by synthesi"
+5299,293900000080,2939,"Alkaloids, natural or reproduced by synthesis"
+5327,294100000080,2941,Antibiotics
+5338,300100000080,3001,Glands and other organs for organo-therapeuti
+5347,300200000080,3002,Human blood; animal blood prepared for therap
+5362,300300000080,3003,"Medicaments (excluding goods of heading 3002,"
+5375,300400000080,3004,"Medicaments (excluding goods of heading 3002,"
+5390,300500000080,3005,"Wadding, gauze, bandages and similar articles"
+5399,300600000080,3006,Pharmaceutical goods specified in note 4 to t
+5415,310200000080,3102,"Mineral or chemical fertilisers, nitrogenous"
+5432,310300000080,3103,"Mineral or chemical fertilisers, phosphatic"
+5437,310400000080,3104,"Mineral or chemical fertilisers, potassic"
+5444,310500000080,3105,Mineral or chemical fertilisers containing tw
+5459,320100000080,3201,Tanning extracts of vegetable origin; tannins
+5465,320200000080,3202,Synthetic organic tanning substances; inorgan
+5471,320400000080,3204,"Synthetic organic colouring matter, whether o"
+5484,320600000080,3206,Other colouring matter; preparations as speci
+5496,320700000080,3207,"Prepared pigments, prepared opacifiers and pr"
+5505,320800000080,3208,Paints and varnishes (including enamels and l
+5520,320900000080,3209,Paints and varnishes (including enamels and l
+5527,321200000080,3212,Pigments (including metallic powders and flak
+5530,321300000080,3213,"Artists', students' or signboard painters' co"
+5533,321400000080,3214,"Glaziers' putty, grafting putty, resin cement"
+5538,321500000080,3215,"Printing ink, writing or drawing ink and othe"
+5546,330100000080,3301,"Essential oils (terpeneless or not), includin"
+5581,330200000080,3302,Mixtures of odoriferous substances and mixtur
+5597,330400000080,3304,Beauty or make-up preparations and preparatio
+5604,330500000080,3305,Preparations for use on the hair
+5609,330600000080,3306,"Preparations for oral or dental hygiene, incl"
+5613,330700000080,3307,"Pre-shave, shaving or aftershave preparations"
+5622,340100000080,3401,Soap; organic surface-active products and pre
+5630,340200000080,3402,Organic surface-active agents (other than soa
+5644,340300000080,3403,Lubricating preparations (including cutting-o
+5654,340400000080,3404,Artificial waxes and prepared waxes
+5657,340500000080,3405,"Polishes and creams, for footwear, furniture,"
+5668,350100000080,3501,"Casein, caseinates and other casein derivativ"
+5676,350200000080,3502,Albumins (including concentrates of two or mo
+5700,350500000080,3505,Dextrins and other modified starches (for exa
+5711,350600000080,3506,"Prepared glues and other prepared adhesives,"
+5718,350700000080,3507,Enzymes; prepared enzymes not elsewhere speci
+5733,360400000080,3604,"Fireworks, signalling flares, rain rockets, f"
+5737,360600000080,3606,Ferro-cerium and other pyrophoric alloys in a
+5743,370100000080,3701,"Photographic plates and film in the flat, sen"
+5750,370200000080,3702,"Photographic film in rolls, sensitised, unexp"
+5781,370300000080,3703,"Photographic paper, paperboard and textiles,"
+5791,370600000080,3706,"Cinematographic film, exposed and developed,"
+5800,370700000080,3707,Chemical preparations for photographic uses (
+5808,380100000080,3801,Artificial graphite; colloidal or semi-colloi
+5815,380200000080,3802,Activated carbon; activated natural mineral p
+5822,380500000080,3805,"Gum, wood or sulphate turpentine and other te"
+5830,380600000080,3806,"Rosin and resin acids, and derivatives thereo"
+5838,380800000080,3808,"Insecticides, rodenticides, fungicides, herbi"
+5881,380900000080,3809,"Finishing agents, dye carriers to accelerate"
+5891,381000000080,3810,Pickling preparations for metal surfaces; flu
+5896,381100000080,3811,"Anti-knock preparations, oxidation inhibitors"
+5906,381200000080,3812,Prepared rubber accelerators; compound plasti
+5920,381500000080,3815,"Reaction initiators, reaction accelerators an"
+5941,382300000080,3823,Industrial monocarboxylic fatty acids; acid o
+5951,382400000080,3824,Prepared binders for foundry moulds or cores;
+6021,382500000080,3825,Residual products of the chemical or allied i
+6041,390100000080,3901,"Polymers of ethylene, in primary forms"
+6053,390200000080,3902,"Polymers of propylene or of other olefins, in"
+6061,390300000080,3903,"Polymers of styrene, in primary forms"
+6071,390400000080,3904,Polymers of vinyl chloride or of other haloge
+6088,390500000080,3905,Polymers of vinyl acetate or of other vinyl e
+6101,390600000080,3906,Acrylic polymers in primary forms
+6111,390700000080,3907,"Polyacetals, other polyethers and epoxide res"
+6135,390800000080,3908,Polyamides in primary forms
+6138,390900000080,3909,"Amino-resins, phenolic resins and polyurethan"
+6149,391100000080,3911,"Petroleum resins, coumarone-indene resins, po"
+6159,391200000080,3912,"Cellulose and its chemical derivatives, not e"
+6176,391300000080,3913,"Natural polymers (for example, alginic acid)"
+6181,391500000080,3915,"Waste, parings and scrap, of plastics"
+6188,391600000080,3916,Monofilament of which any cross-sectional dim
+6195,391700000080,3917,"Tubes, pipes and hoses, and fittings therefor"
+6216,391800000080,3918,"Floor coverings of plastics, whether or not s"
+6221,391900000080,3919,"Self-adhesive plates, sheets, film, foil, tap"
+6231,392000000080,3920,"Other plates, sheets, film, foil and strip, o"
+6293,392100000080,3921,"Other plates, sheets, film, foil and strip, o"
+6314,392200000080,3922,"Baths, shower-baths, sinks, washbasins, bidet"
+6318,392300000080,3923,Articles for the conveyance or packing of goo
+6337,392400000080,3924,"Tableware, kitchenware, other household artic"
+6340,392500000080,3925,"Builders' ware of plastics, not elsewhere spe"
+6348,392600000080,3926,Other articles of plastics and articles of ot
+6359,400100000080,4001,"Natural rubber, balata, gutta-percha, guayule"
+6366,400200000080,4002,Synthetic rubber and factice derived from oil
+6394,400500000080,4005,"Compounded rubber, unvulcanised, in primary f"
+6400,400600000080,4006,"Other forms (for example, rods, tubes and pro"
+6404,400800000080,4008,"Plates, sheets, strip, rods and profile shape"
+6413,400900000080,4009,"Tubes, pipes and hoses, of vulcanised rubber"
+6426,401000000080,4010,"Conveyor or transmission belts or belting, of"
+6439,401100000080,4011,"New pneumatic tyres, of rubber"
+6450,401200000080,4012,Retreaded or used pneumatic tyres of rubber;
+6461,401300000080,4013,"Inner tubes, of rubber"
+6465,401400000080,4014,Hygienic or pharmaceutical articles (includin
+6468,401500000080,4015,Articles of apparel and clothing accessories
+6473,401600000080,4016,Other articles of vulcanised rubber other tha
+6491,410100000080,4101,Raw hides and skins of bovine (including buff
+6503,410200000080,4102,"Raw skins of sheep or lambs (fresh, or salted"
+6510,410300000080,4103,"Other raw hides and skins (fresh, or salted,"
+6514,410400000080,4104,Tanned or crust hides and skins of bovine (in
+6549,410500000080,4105,"Tanned or crust skins of sheep or lambs, with"
+6554,410600000080,4106,Tanned or crust hides and skins of other anim
+6569,410700000080,4107,Leather further prepared after tanning or cru
+6597,411300000080,4113,Leather further prepared after tanning or cru
+6602,411400000080,4114,Chamois (including combination chamois) leath
+6607,411500000080,4115,Composition leather with a basis of leather o
+6612,420200000080,4202,"Trunks, suitcases, vanity cases, executive-ca"
+6653,420300000080,4203,"Articles of apparel and clothing accessories,"
+6669,430100000080,4301,"Raw furskins (including heads, tails, paws an"
+6675,430200000080,4302,"Tanned or dressed furskins (including heads,"
+6697,430300000080,4303,"Articles of apparel, clothing accessories and"
+6705,440100000080,4401,"Fuel wood, in logs, in billets, in twigs, in"
+6718,440200000080,4402,Wood charcoal (including shell or nut charcoa
+6721,440300000080,4403,"Wood in the rough, whether or not stripped of"
+6755,440400000080,4404,"Hoopwood; split poles; piles, pickets and sta"
+6759,440600000080,4406,Railway or tramway sleepers (cross-ties) of w
+6766,440700000080,4407,"Wood sawn or chipped lengthwise, sliced or pe"
+6866,440800000080,4408,Sheets for veneering (including those obtaine
+6899,440900000080,4409,Wood (including strips and friezes for parque
+6911,441000000080,4410,"Particle board, oriented strand board (OSB) a"
+6923,441100000080,4411,Fibreboard of wood or other ligneous material
+6944,441200000080,4412,"Plywood, veneered panels and similar laminate"
+6968,441500000080,4415,"Packing cases, boxes, crates, drums and simil"
+6977,441800000080,4418,"Builders' joinery and carpentry of wood, incl"
+7001,441900000080,4419,"Tableware and kitchenware, of wood"
+7009,442000000080,4420,Wood marquetry and inlaid wood; caskets and c
+7018,442100000080,4421,Other articles of wood
+7028,450100000080,4501,"Natural cork, raw or simply prepared; waste c"
+7032,450300000080,4503,Articles of natural cork
+7037,450400000080,4504,Agglomerated cork (with or without a binding
+7049,460100000080,4601,Plaits and similar products of plaiting mater
+7081,460200000080,4602,"Basketwork, wickerwork and other articles, ma"
+7095,470300000080,4703,"Chemical wood pulp, soda or sulphate, other t"
+7102,470400000080,4704,"Chemical wood pulp, sulphite, other than diss"
+7110,470600000080,4706,Pulps of fibres derived from recovered (waste
+7118,470700000080,4707,Recovered (waste and scrap) paper or paperboa
+7129,480200000080,4802,"Uncoated paper and paperboard, of a kind used"
+7161,480400000080,4804,"Uncoated kraft paper and paperboard, in rolls"
+7206,480500000080,4805,"Other uncoated paper and paperboard, in rolls"
+7225,480600000080,4806,"Vegetable parchment, greaseproof papers, trac"
+7235,480800000080,4808,"Paper and paperboard, corrugated (with or wit"
+7239,480900000080,4809,"Carbon paper, self-copy paper and other copyi"
+7242,481000000080,4810,"Paper and paperboard, coated on one or both s"
+7266,481100000080,4811,"Paper, paperboard, cellulose wadding and webs"
+7279,481300000080,4813,"Cigarette paper, whether or not cut to size o"
+7285,481400000080,4814,Wallpaper and similar wallcoverings; window t
+7290,481600000080,4816,"Carbon paper, self-copy paper and other copyi"
+7293,481700000080,4817,"Envelopes, letter cards, plain postcards and"
+7297,481800000080,4818,"Toilet paper and similar paper, cellulose wad"
+7311,481900000080,4819,"Cartons, boxes, cases, bags and other packing"
+7318,482000000080,4820,"Registers, account books, notebooks, order bo"
+7329,482100000080,4821,"Paper or paperboard labels of all kinds, whet"
+7336,482200000080,4822,"Bobbins, spools, cops and similar supports, o"
+7339,482300000080,4823,"Other paper, paperboard, cellulose wadding an"
+7354,490100000080,4901,"Printed books, brochures, leaflets and simila"
+7359,490200000080,4902,"Newspapers, journals and periodicals, whether"
+7364,490500000080,4905,Maps and hydrographic or similar charts of al
+7374,490800000080,4908,Transfers (decalcomanias)
+7379,491100000080,4911,"Other printed matter, including printed pictu"
+7400,500700000080,5007,Woven fabrics of silk or of silk waste
+7426,510100000080,5101,"Wool, not carded or combed"
+7434,510200000080,5102,"Fine or coarse animal hair, not carded or com"
+7443,510300000080,5103,Waste of wool or of fine or coarse animal hai
+7450,510500000080,5105,"Wool and fine or coarse animal hair, carded o"
+7459,510600000080,5106,"Yarn of carded wool, not put up for retail sa"
+7468,510700000080,5107,"Yarn of combed wool, not put up for retail sa"
+7483,510800000080,5108,"Yarn of fine animal hair (carded or combed),"
+7490,510900000080,5109,"Yarn of wool or of fine animal hair, put up f"
+7496,511100000080,5111,Woven fabrics of carded wool or of carded fin
+7509,511200000080,5112,Woven fabrics of combed wool or of combed fin
+7527,520200000080,5202,Cotton waste (including yarn waste and garnet
+7533,520400000080,5204,"Cotton sewing thread, whether or not put up f"
+7538,520500000080,5205,"Cotton yarn (other than sewing thread), conta"
+7569,520600000080,5206,"Cotton yarn (other than sewing thread), conta"
+7594,520700000080,5207,Cotton yarn (other than sewing thread) put up
+7597,520800000080,5208,"Woven fabrics of cotton, containing 85 % or m"
+7646,520900000080,5209,"Woven fabrics of cotton, containing 85 % or m"
+7668,521000000080,5210,"Woven fabrics of cotton, containing less than"
+7685,521100000080,5211,"Woven fabrics of cotton, containing less than"
+7706,521200000080,5212,Other woven fabrics of cotton
+7740,530100000080,5301,"Flax, raw or processed but not spun; flax tow"
+7746,530200000080,5302,"True hemp (Cannabis sativa L.), raw or proces"
+7749,530300000080,5303,Jute and other textile bast fibres (excluding
+7753,530600000080,5306,Flax yarn
+7763,530700000080,5307,Yarn of jute or of other textile bast fibres
+7766,530800000080,5308,Yarn of other vegetable textile fibres; paper
+7777,530900000080,5309,Woven fabrics of flax
+7786,531000000080,5310,Woven fabrics of jute or of other textile bas
+7795,540100000080,5401,"Sewing thread of man-made filaments, whether"
+7808,540200000080,5402,Synthetic filament yarn (other than sewing th
+7836,540300000080,5403,Artificial filament yarn (other than sewing t
+7847,540400000080,5404,Synthetic monofilament of 67 decitex or more
+7857,540700000080,5407,"Woven fabrics of synthetic filament yarn, inc"
+7899,540800000080,5408,"Woven fabrics of artificial filament yarn, in"
+7914,550100000080,5501,Synthetic filament tow
+7920,550200000080,5502,Artificial filament tow
+7923,550300000080,5503,"Synthetic staple fibres, not carded, combed o"
+7931,550400000080,5504,"Artificial staple fibres, not carded, combed"
+7934,550500000080,5505,"Waste (including noils, yarn waste and garnet"
+7942,550600000080,5506,"Synthetic staple fibres, carded, combed or ot"
+7949,550800000080,5508,"Sewing thread of man-made staple fibres, whet"
+7956,550900000080,5509,Yarn (other than sewing thread) of synthetic
+7982,551000000080,5510,Yarn (other than sewing thread) of artificial
+7989,551100000080,5511,Yarn (other than sewing thread) of man-made s
+7993,551200000080,5512,"Woven fabrics of synthetic staple fibres, con"
+8009,551300000080,5513,"Woven fabrics of synthetic staple fibres, con"
+8029,551400000080,5514,"Woven fabrics of synthetic staple fibres, con"
+8051,551500000080,5515,Other woven fabrics of synthetic staple fibre
+8094,551600000080,5516,Woven fabrics of artificial staple fibres
+8123,560100000080,5601,Wadding of textile materials and articles the
+8133,560200000080,5602,"Felt, whether or not impregnated, coated, cov"
+8147,560300000080,5603,"Nonwovens, whether or not impregnated, coated"
+8174,560400000080,5604,"Rubber thread and cord, textile covered; text"
+8185,560700000080,5607,"Twine, cordage, ropes and cables, whether or"
+8206,560800000080,5608,"Knotted netting of twine, cordage or rope; ma"
+8221,570100000080,5701,"Carpets and other textile floor coverings, kn"
+8228,570200000080,5702,"Carpets and other textile floor coverings, wo"
+8255,570300000080,5703,"Carpets and other textile floor coverings, tu"
+8274,570400000080,5704,"Carpets and other textile floor coverings, of"
+8282,580100000080,5801,"Woven pile fabrics and chenille fabrics, othe"
+8299,580200000080,5802,Terry towelling and similar woven terry fabri
+8309,580400000080,5804,"Tulles and other net fabrics, not including w"
+8318,580600000080,5806,"Narrow woven fabrics, other than goods of hea"
+8328,580700000080,5807,"Labels, badges and similar articles of textil"
+8335,580800000080,5808,Braids in the piece; ornamental trimmings in
+8339,581000000080,5810,"Embroidery in the piece, in strips or in moti"
+8355,590100000080,5901,Textile fabrics coated with gum or amylaceous
+8358,590200000080,5902,Tyre cord fabric of high-tenacity yarn of nyl
+8368,590300000080,5903,"Textile fabrics impregnated, coated, covered"
+8380,590400000080,5904,"Linoleum, whether or not cut to shape; floor"
+8390,590600000080,5906,"Rubberised textile fabrics, other than those"
+8403,591100000080,5911,"Textile products and articles, for technical"
+8424,600100000080,6001,"Pile fabrics, including ‘long pile’ fabrics a"
+8434,600200000080,6002,Knitted or crocheted fabrics of a width not e
+8437,600300000080,6003,Knitted or crocheted fabrics of a width not e
+8445,600400000080,6004,Knitted or crocheted fabrics of a width excee
+8448,600500000080,6005,Warp knit fabrics (including those made on ga
+8468,600600000080,6006,Other knitted or crocheted fabrics
+8487,610100000080,6101,"Men's or boys' overcoats, car coats, capes, c"
+8497,610200000080,6102,"Women's or girls' overcoats, car coats, capes"
+8510,610300000080,6103,"Men's or boys' suits, ensembles, jackets, bla"
+8528,610400000080,6104,"Suits, ensembles, jackets, dresses, skirts, divided skirts, trousers, bib and brace overalls, breeches and shorts (not swimwear), women's or girls', k"
+8561,610500000080,6105,"Men's or boys' shirts, knitted or crocheted"
+8569,610600000080,6106,"Women's or girls' blouses, shirts and shirt-b"
+8577,610700000080,6107,"Men's or boys' underpants, briefs, nightshirt"
+8589,610800000080,6108,"Women's or girls' slips, petticoats, briefs,"
+8605,610900000080,6109,"T-shirts, singlets and other vests, knitted o"
+8610,611000000080,6110,"Jerseys, pullovers, cardigans, waistcoats and"
+8636,611100000080,6111,"Babies' garments and clothing accessories, kn"
+8648,611200000080,6112,"Tracksuits, ski suits and swimwear, knitted o"
+8671,611400000080,6114,"Other garments, knitted or crocheted"
+8675,611500000080,6115,"Pantyhose, tights, stockings, socks and other"
+8697,611600000080,6116,"Gloves, mittens and mitts, knitted or crochet"
+8706,611700000080,6117,"Other made-up clothing accessories, knitted o"
+8713,620100000080,6201,"Men's or boys' overcoats, car coats, capes, c"
+8728,620200000080,6202,"Women's or girls' overcoats, car coats, capes"
+8743,620300000080,6203,"Men's or boys' suits, ensembles, jackets, bla"
+8811,620400000080,6204,"Suits, ensembles, jackets, dresses, skirts, divided skirts, trousers, bib and brace overalls, breeches and shorts (other than swimwear); women's or gi"
+8893,620500000080,6205,Men's or boys' shirts
+8899,620600000080,6206,"Women's or girls' blouses, shirts and shirt-b"
+8907,620700000080,6207,"Men's or boys' singlets and other vests, unde"
+8920,620800000080,6208,"Women's or girls' singlets and other vests, s"
+8932,620900000080,6209,Babies' garments and clothing accessories
+8938,621000000080,6210,"Garments, made up of fabrics of heading 5602,"
+8948,621100000080,6211,"Tracksuits, ski suits and swimwear; other gar"
+8989,621200000080,6212,"Brassières, girdles, corsets, braces, suspend"
+8996,621300000080,6213,Handkerchiefs
+8999,621400000080,6214,"Shawls, scarves, mufflers, mantillas, veils a"
+9005,621500000080,6215,"Ties, bow ties and cravats"
+9010,621700000080,6217,Other made-up clothing accessories; parts of
+9015,630100000080,6301,Blankets and travelling rugs
+9029,630200000080,6302,"Bedlinen, table linen, toilet linen and kitch"
+9065,630300000080,6303,Curtains (including drapes) and interior blin
+9077,630400000080,6304,"Other furnishing articles, excluding those of"
+9090,630500000080,6305,"Sacks and bags, of a kind used for the packin"
+9106,630600000080,6306,"Tarpaulins, awnings and sunblinds; tents; sai"
+9116,630700000080,6307,"Other made-up articles, including dress patte"
+9133,631000000080,6310,"Used or new rags, scrap twine, cordage, rope"
+9138,640100000080,6401,Waterproof footwear with outer soles and uppe
+9145,640200000080,6402,Other footwear with outer soles and uppers of
+9172,640300000080,6403,"Footwear with outer soles of rubber, plastics"
+9246,640400000080,6404,"Footwear with outer soles of rubber, plastics"
+9255,640500000080,6405,Other footwear
+9265,640600000080,6406,Parts of footwear (including uppers whether o
+9286,650600000080,6506,"Other headgear, whether or not lined or trimm"
+9297,660100000080,6601,Umbrellas and sun umbrellas (including walkin
+9305,660300000080,6603,"Parts, trimmings and accessories of articles"
+9312,670200000080,6702,"Artificial flowers, foliage and fruit and par"
+9316,670400000080,6704,"Wigs, false beards, eyebrows and eyelashes, s"
+9325,680200000080,6802,Worked monumental or building stone (except s
+9343,680400000080,6804,"Millstones, grindstones, grinding wheels and"
+9357,680500000080,6805,Natural or artificial abrasive powder or grai
+9361,680600000080,6806,"Slag-wool, rock-wool and similar mineral wool"
+9367,680700000080,6807,Articles of asphalt or of similar material (f
+9371,680900000080,6809,Articles of plaster or of compositions based
+9376,681000000080,6810,"Articles of cement, of concrete or of artific"
+9385,681100000080,6811,"Articles of asbestos-cement, of cellulose fib"
+9391,681200000080,6812,Fabricated asbestos fibres; mixtures with a b
+9402,681300000080,6813,Friction material and articles thereof (for e
+9407,681400000080,6814,"Worked mica and articles of mica, including a"
+9410,681500000080,6815,Articles of stone or of other mineral substan
+9421,690200000080,6902,"Refractory bricks, blocks, tiles and similar"
+9429,690300000080,6903,"Other refractory ceramic goods (for example,"
+9438,690400000080,6904,"Ceramic building bricks, flooring blocks, sup"
+9441,690500000080,6905,"Roofing tiles, chimney pots, cowls, chimney l"
+9445,690700000080,6907,"Ceramic flags and paving, hearth or wall tile"
+9452,690900000080,6909,"Ceramic wares for laboratory, chemical or oth"
+9458,691000000080,6910,"Ceramic sinks, washbasins, washbasin pedestal"
+9461,691100000080,6911,"Tableware, kitchenware, other household artic"
+9475,691300000080,6913,Statuettes and other ornamental ceramic artic
+9482,691400000080,6914,Other ceramic articles
+9491,700200000080,7002,Glass in balls (other than microspheres of he
+9500,700300000080,7003,"Cast glass and rolled glass, in sheets or pro"
+9512,700400000080,7004,"Drawn glass and blown glass, in sheets, wheth"
+9521,700500000080,7005,Float glass and surface ground or polished gl
+9541,700700000080,7007,"Safety glass, consisting of toughened (temper"
+9560,700900000080,7009,"Glass mirrors, whether or not framed, includi"
+9565,701000000080,7010,"Carboys, bottles, flasks, jars, pots, phials,"
+9596,701100000080,7011,"Glass envelopes (including bulbs and tubes),"
+9600,701300000080,7013,"Glassware of a kind used for table, kitchen,"
+9642,701500000080,7015,"Clock or watch glasses and similar glasses, g"
+9645,701600000080,7016,"Paving blocks, slabs, bricks, squares, tiles"
+9651,701700000080,7017,"Laboratory, hygienic or pharmaceutical glassw"
+9655,701800000080,7018,"Glass beads, imitation pearls, imitation prec"
+9669,701900000080,7019,Glass fibres (including glass wool) and artic
+9698,710100000080,7101,"Pearls, natural or cultured, whether or not w"
+9703,710200000080,7102,"Diamonds, whether or not worked, but not moun"
+9711,710300000080,7103,Precious stones (other than diamonds) and sem
+9716,710400000080,7104,Synthetic or reconstructed precious or semi-p
+9720,710500000080,7105,Dust and powder of natural or synthetic preci
+9724,710600000080,7106,Silver (including silver plated with gold or
+9730,710800000080,7108,"Gold (including gold plated with platinum), u"
+9739,711000000080,7110,"Platinum, unwrought or in semi-manufactured f"
+9755,711200000080,7112,Waste and scrap of precious metal or of metal
+9762,711300000080,7113,"Articles of jewellery and parts thereof, of p"
+9767,711400000080,7114,Articles of goldsmiths' or silversmiths' ware
+9772,711500000080,7115,Other articles of precious metal or of metal
+9775,711600000080,7116,"Articles of natural or cultured pearls, preci"
+9780,711700000080,7117,Imitation jewellery
+9785,711800000080,7118,Coin
+9791,720100000080,7201,"Pig iron and spiegeleisen in pigs, blocks or"
+9802,720200000080,7202,Ferro-alloys
+9834,720300000080,7203,Ferrous products obtained by direct reduction
+9837,720400000080,7204,Ferrous waste and scrap; remelting scrap ingo
+9857,720500000080,7205,"Granules and powders, of pig iron, spiegeleis"
+9863,720600000080,7206,Iron and non-alloy steel in ingots or other p
+9866,720700000080,7207,Semi-finished products of iron or non-alloy s
+9898,720800000080,7208,Flat-rolled products of iron or non-alloy ste
+9928,720900000080,7209,Flat-rolled products of iron or non-alloy ste
+9956,721000000080,7210,Flat-rolled products of iron or non-alloy ste
+9978,721100000080,7211,Flat-rolled products of iron or non-alloy ste
+9993,721200000080,7212,Flat-rolled products of iron or non-alloy ste
+10011,721300000080,7213,"Bars and rods, hot-rolled, in irregularly wou"
+10026,721400000080,7214,Other bars and rods of iron or non-alloy stee
+10046,721500000080,7215,Other bars and rods of iron or non-alloy stee
+10054,721600000080,7216,"Angles, shapes and sections of iron or non-al"
+10091,721700000080,7217,Wire of iron or non-alloy steel
+10117,721800000080,7218,Stainless steel in ingots or other primary fo
+10130,721900000080,7219,"Flat-rolled products of stainless steel, of a"
+10168,722000000080,7220,"Flat-rolled products of stainless steel, of a"
+10188,722200000080,7222,Other bars and rods of stainless steel; angle
+10231,722400000080,7224,Other alloy steel in ingots or other primary
+10251,722500000080,7225,"Flat-rolled products of other alloy steel, of"
+10275,722600000080,7226,"Flat-rolled products of other alloy steel, of"
+10293,722700000080,7227,"Bars and rods, hot-rolled, in irregularly wou"
+10300,722800000080,7228,Other bars and rods of other alloy steel; ang
+10339,722900000080,7229,Wire of other alloy steel
+10346,730100000080,7301,"Sheet piling of iron or steel, whether or not"
+10349,730200000080,7302,Railway or tramway track construction materia
+10366,730400000080,7304,"Tubes, pipes and hollow profiles, seamless, o"
+10421,730500000080,7305,"Other tubes and pipes (for example, welded, r"
+10431,730600000080,7306,"Other tubes, pipes and hollow profiles (for e"
+10471,730700000080,7307,"Tube or pipe fittings (for example, couplings"
+10505,730800000080,7308,Structures (excluding prefabricated buildings
+10523,731000000080,7310,"Tanks, casks, drums, cans, boxes and similar"
+10545,731200000080,7312,"Stranded wire, ropes, cables, plaited bands,"
+10567,731400000080,7314,"Cloth (including endless bands), grill, netti"
+10583,731500000080,7315,"Chain and parts thereof, of iron or steel"
+10602,731800000080,7318,"Screws, bolts, nuts, coach screws, screw hook"
+10652,731900000080,7319,"Sewing needles, knitting needles, bodkins, cr"
+10657,732000000080,7320,"Springs and leaves for springs, of iron or st"
+10673,732100000080,7321,"Stoves, ranges, grates, cookers (including th"
+10685,732200000080,7322,"Radiators for central heating, not electrical"
+10690,732300000080,7323,"Table, kitchen or other household articles an"
+10698,732400000080,7324,"Sanitary ware and parts thereof, of iron or s"
+10704,732500000080,7325,Other cast articles of iron or steel
+10711,732600000080,7326,Other articles of iron or steel
+10731,740300000080,7403,"Refined copper and copper alloys, unwrought"
+10747,740600000080,7406,Copper powders and flakes
+10750,740700000080,7407,"Copper bars, rods and profiles"
+10757,740800000080,7408,Copper wire
+10767,740900000080,7409,"Copper plates, sheets and strip, of a thickne"
+10779,741000000080,7410,Copper foil (whether or not printed or backed
+10786,741100000080,7411,Copper tubes and pipes
+10796,741200000080,7412,"Copper tube or pipe fittings (for example, co"
+10800,741500000080,7415,"Nails, tacks, drawing pins, staples (other th"
+10808,741800000080,7418,"Table, kitchen or other household articles an"
+10813,741900000080,7419,Other articles of copper
+10822,750100000080,7501,"Nickel mattes, nickel oxide sinters and other"
+10825,750200000080,7502,Unwrought nickel
+10832,750500000080,7505,"Nickel bars, rods, profiles and wire"
+10839,750600000080,7506,"Nickel plates, sheets, strip and foil"
+10842,750700000080,7507,"Nickel tubes, pipes and tube or pipe fittings"
+10847,750800000080,7508,Other articles of nickel
+10851,760100000080,7601,Unwrought aluminium
+10861,760300000080,7603,Aluminium powders and flakes
+10864,760400000080,7604,"Aluminium bars, rods and profiles"
+10873,760500000080,7605,Aluminium wire
+10880,760600000080,7606,"Aluminium plates, sheets and strip, of a thic"
+10897,760700000080,7607,Aluminium foil (whether or not printed or bac
+10910,760800000080,7608,Aluminium tubes and pipes
+10918,761000000080,7610,Aluminium structures (excluding prefabricated
+10924,761200000080,7612,"Aluminium casks, drums, cans, boxes and simil"
+10931,761400000080,7614,"Stranded wire, cables, plaited bands and the"
+10934,761500000080,7615,"Table, kitchen or other household articles an"
+10940,761600000080,7616,Other articles of aluminium
+10948,780100000080,7801,Unwrought lead
+10956,780400000080,7804,"Lead plates, sheets, strip and foil; lead pow"
+10965,790100000080,7901,Unwrought zinc
+10974,790300000080,7903,"Zinc dust, powders and flakes"
+10981,800100000080,8001,Unwrought tin
+10990,810100000080,8101,"Tungsten (wolfram) and articles thereof, incl"
+10999,810200000080,8102,"Molybdenum and articles thereof, including wa"
+11007,810300000080,8103,"Tantalum and articles thereof, including wast"
+11013,810400000080,8104,"Magnesium and articles thereof, including was"
+11020,810500000080,8105,Cobalt mattes and other intermediate products
+11027,810700000080,8107,"Cadmium and articles thereof, including waste"
+11031,810800000080,8108,"Titanium and articles thereof, including wast"
+11039,810900000080,8109,"Zirconium and articles thereof, including was"
+11043,811000000080,8110,"Antimony and articles thereof, including wast"
+11052,811200000080,8112,"Beryllium, chromium, germanium, vanadium, gal"
+11087,820100000080,8201,"Hand tools, the following: spades, shovels, m"
+11094,820200000080,8202,Handsaws; blades for saws of all kinds (inclu
+11106,820300000080,8203,"Files, rasps, pliers (including cutting plier"
+11111,820400000080,8204,Hand-operated spanners and wrenches (includin
+11116,820500000080,8205,"Hand tools (including glaziers' diamonds), no"
+11132,820700000080,8207,"Interchangeable tools for hand tools, whether"
+11192,820800000080,8208,"Knives and cutting blades, for machines or fo"
+11202,821100000080,8211,"Knives with cutting blades, serrated or not ("
+11210,821200000080,8212,Razors and razor blades (including razor blad
+11217,821400000080,8214,"Other articles of cutlery (for example, hair"
+11221,821500000080,8215,"Spoons, forks, ladles, skimmers, cake-servers"
+11236,830100000080,8301,"Padlocks and locks (key, combination or elect"
+11248,830200000080,8302,"Base-metal mountings, fittings and similar ar"
+11265,830500000080,8305,"Fittings for loose-leaf binders or files, let"
+11269,830600000080,8306,"Bells, gongs and the like, non-electric, of b"
+11275,830700000080,8307,"Flexible tubing of base metal, with or withou"
+11278,830800000080,8308,"Clasps, frames with clasps, buckles, buckle-c"
+11282,830900000080,8309,"Stoppers, caps and lids (including crown cork"
+11288,831100000080,8311,"Wire, rods, tubes, plates, electrodes and sim"
+11295,840100000080,8401,"Nuclear reactors; fuel elements (cartridges),"
+11300,840200000080,8402,Steam or other vapour generating boilers (oth
+11309,840300000080,8403,Central heating boilers other than those of h
+11316,840400000080,8404,Auxiliary plant for use with boilers of headi
+11320,840500000080,8405,"Producer gas or water gas generators, with or"
+11323,840600000080,8406,Steam turbines and other vapour turbines
+11331,840700000080,8407,Spark-ignition reciprocating or rotary intern
+11362,840800000080,8408,Compression-ignition internal combustion pist
+11419,840900000080,8409,Parts suitable for use solely or principally
+11424,841000000080,8410,"Hydraulic turbines, water wheels, and regulat"
+11430,841100000080,8411,"Turbojets, turbopropellers and other gas turb"
+11451,841200000080,8412,Other engines and motors
+11472,841300000080,8413,"Pumps for liquids, whether or not fitted with"
+11525,841400000080,8414,"Air or vacuum pumps, air or other gas compres"
+11571,841500000080,8415,"Air-conditioning machines, comprising a motor"
+11581,841600000080,8416,"Furnace burners for liquid fuel, for pulveris"
+11592,841700000080,8417,"Industrial or laboratory furnaces and ovens,"
+11602,841800000080,8418,"Refrigerators, freezers and other refrigerati"
+11635,841900000080,8419,"Machinery, plant or laboratory equipment, whe"
+11660,842000000080,8420,"Calendering or other rolling machines, other"
+11672,842100000080,8421,"Centrifuges, including centrifugal dryers; fi"
+11700,842200000080,8422,Dishwashing machines; machinery for cleaning
+11710,842300000080,8423,Weighing machinery (excluding balances of a s
+11739,842400000080,8424,Mechanical appliances (whether or not hand-op
+11764,842500000080,8425,Pulley tackle and hoists other than skip hois
+11775,842600000080,8426,"Ships' derricks; cranes, including cable cran"
+11790,842700000080,8427,Fork-lift trucks; other works trucks fitted w
+11800,842800000080,8428,"Other lifting, handling, loading or unloading"
+11821,842900000080,8429,"Self-propelled bulldozers, angledozers, grade"
+11842,843000000080,8430,"Other moving, grading, levelling, scraping, e"
+11855,843100000080,8431,Parts suitable for use solely or principally
+11868,843200000080,8432,"Agricultural, horticultural or forestry machi"
+11889,843300000080,8433,"Harvesting or threshing machinery, including"
+11928,843400000080,8434,Milking machines and dairy machinery
+11932,843500000080,8435,"Presses, crushers and similar machinery used"
+11935,843600000080,8436,"Other agricultural, horticultural, forestry,"
+11946,843700000080,8437,"Machines for cleaning, sorting or grading see"
+11950,843800000080,8438,"Machinery, not specified or included elsewher"
+11965,843900000080,8439,Machinery for making pulp of fibrous cellulos
+11972,844000000080,8440,"Bookbinding machinery, including book-sewing"
+11980,844100000080,8441,"Other machinery for making up paper pulp, pap"
+11993,844200000080,8442,"Machinery, apparatus and equipment (other tha"
+11997,844300000080,8443,Printing machinery used for printing by means
+12035,844500000080,8445,Machines for preparing textile fibres; spinni
+12045,844600000080,8446,Weaving machines (looms)
+12051,844700000080,8447,"Knitting machines, stitch-bonding machines an"
+12059,844800000080,8448,Auxiliary machinery for use with machines of
+12078,845000000080,8450,"Household or laundry-type washing machines, i"
+12089,845100000080,8451,Machinery (other than machines of heading 845
+12102,845200000080,8452,"Sewing machines, other than book-sewing machi"
+12113,845300000080,8453,"Machinery for preparing, tanning or working h"
+12118,845400000080,8454,"Converters, ladles, ingot moulds and casting"
+12125,845500000080,8455,Metal-rolling mills and rolls therefor
+12137,845600000080,8456,Machine tools for working any material by rem
+12154,845700000080,8457,"Machining centres, unit construction machines"
+12162,845800000080,8458,Lathes (including turning centres) for removi
+12176,845900000080,8459,Machine tools (including way-type unit head m
+12198,846000000080,8460,"Machine tools for deburring, sharpening, grin"
+12216,846100000080,8461,"Machine tools for planing, shaping, slotting,"
+12240,846200000080,8462,Machine tools (including presses) for working
+12274,846300000080,8463,Other machine tools for working metal or cerm
+12281,846400000080,8464,"Machine tools for working stone, ceramics, co"
+12289,846500000080,8465,Machine tools (including machines for nailing
+12305,846600000080,8466,Parts and accessories suitable for use solely
+12332,846700000080,8467,"Tools for working in the hand, pneumatic, hyd"
+12365,846800000080,8468,"Machinery and apparatus for soldering, brazin"
+12370,847000000080,8470,Calculating machines and pocket-size data-rec
+12378,847100000080,8471,Automatic data-processing machines and units
+12399,847200000080,8472,"Other office machines (for example, hectograp"
+12407,847300000080,8473,"Parts and accessories (other than covers, car"
+12424,847400000080,8474,"Machinery for sorting, screening, separating,"
+12437,847500000080,8475,Machines for assembling electric or electroni
+12445,847600000080,8476,Automatic goods-vending machines (for example
+12457,847700000080,8477,Machinery for working rubber or plastics or f
+12479,847800000080,8478,"Machinery for preparing or making up tobacco,"
+12482,847900000080,8479,Machines and mechanical appliances having ind
+12507,848000000080,8480,Moulding boxes for metal foundry; mould bases
+12521,848100000080,8481,"Taps, cocks, valves and similar appliances fo"
+12562,848200000080,8482,Ball or roller bearings
+12576,848300000080,8483,Transmission shafts (including cam shafts and
+12612,848400000080,8484,Gaskets and similar joints of metal sheeting
+12616,848600000080,8486,Machines and apparatus of a kind used solely
+12622,848700000080,8487,"Machinery parts, not containing electrical co"
+12634,850100000080,8501,Electric motors and generators (excluding gen
+12669,850200000080,8502,Electric generating sets and rotary converter
+12695,850400000080,8504,"Electrical transformers, static converters (f"
+12736,850500000080,8505,Electromagnets; permanent magnets and article
+12749,850600000080,8506,Primary cells and primary batteries
+12768,850700000080,8507,"Electric accumulators, including separators t"
+12785,850800000080,8508,Vacuum cleaners
+12791,850900000080,8509,"Electromechanical domestic appliances, with s"
+12795,851000000080,8510,"Shavers, hair clippers and hair-removing appl"
+12800,851100000080,8511,Electrical ignition or starting equipment of
+12808,851200000080,8512,Electrical lighting or signalling equipment (
+12818,851300000080,8513,Portable electric lamps designed to function
+12821,851400000080,8514,Industrial or laboratory electric furnaces an
+12835,851500000080,8515,"Electric (including electrically heated gas),"
+12857,851600000080,8516,Electric instantaneous or storage water heate
+12891,851700000080,8517,"Telephone sets, including telephones for cell"
+12905,851800000080,8518,Microphones and stands therefor; loudspeakers
+12923,851900000080,8519,Sound recording or sound reproducing apparatu
+12950,852100000080,8521,"Video recording or reproducing apparatus, whe"
+12955,852200000080,8522,Parts and accessories suitable for use solely
+12966,852300000080,8523,"Discs, tapes, solid-state non-volatile storag"
+12995,852500000080,8525,Transmission apparatus for radio-broadcasting
+13006,852600000080,8526,"Radar apparatus, radio navigational aid appar"
+13013,852700000080,8527,"Reception apparatus for radio-broadcasting, w"
+13051,852800000080,8528,"Monitors and projectors, not incorporating te"
+13085,852900000080,8529,Parts suitable for use solely or principally
+13110,853000000080,8530,"Electrical signalling, safety or traffic cont"
+13114,853100000080,8531,Electric sound or visual signalling apparatus
+13127,853200000080,8532,"Electrical capacitors, fixed, variable or adj"
+13138,853300000080,8533,Electrical resistors (including rheostats and
+13155,853500000080,8535,Electrical apparatus for switching or protect
+13165,853600000080,8536,Electrical apparatus for switching or protect
+13207,853700000080,8537,"Boards, panels, consoles, desks, cabinets and"
+13217,853800000080,8538,Parts suitable for use solely or principally
+13226,853900000080,8539,"Electric filament or discharge lamps, includi"
+13259,854000000080,8540,"Thermionic, cold cathode or photocathode valv"
+13277,854100000080,8541,"Diodes, transistors and similar semiconductor"
+13289,854200000080,8542,Electronic integrated circuits
+13321,854300000080,8543,"Electrical machines and apparatus, having ind"
+13344,854400000080,8544,Insulated (including enamelled or anodised) w
+13368,854500000080,8545,"Carbon electrodes, carbon brushes, lamp carbo"
+13376,854600000080,8546,Electrical insulators of any material
+13382,854700000080,8547,"Insulating fittings for electrical machines,"
+13386,854800000080,8548,"Waste and scrap of primary cells, primary bat"
+13401,860100000080,8601,Rail locomotives powered from an external sou
+13404,860200000080,8602,Other rail locomotives; locomotive tenders
+13407,860300000080,8603,"Self-propelled railway or tramway coaches, va"
+13412,860600000080,8606,"Railway or tramway goods vans and wagons, not"
+13421,860700000080,8607,Parts of railway or tramway locomotives or ro
+13446,870100000080,8701,Tractors (other than tractors of heading 8709
+13468,870200000080,8702,Motor vehicles for the transport of ten or mo
+13492,870300000080,8703,Motor cars and other motor vehicles principal
+13537,870400000080,8704,Motor vehicles for the transport of goods
+13577,870500000080,8705,"Special purpose motor vehicles, other than th"
+13592,870700000080,8707,"Bodies (including cabs), for the motor vehicl"
+13599,870800000080,8708,Parts and accessories of the motor vehicles o
+13680,870900000080,8709,"Works trucks, self-propelled, not fitted with"
+13690,871100000080,8711,Motorcycles (including mopeds) and cycles fit
+13709,871300000080,8713,"Carriages for disabled persons, whether or no"
+13712,871400000080,8714,Parts and accessories of vehicles of headings
+13746,871600000080,8716,"Trailers and semi-trailers; other vehicles, n"
+13771,880200000080,8802,"Other aircraft (for example, helicopters, aer"
+13783,880300000080,8803,Parts of goods of heading 8801 or 8802
+13795,880500000080,8805,Aircraft launching gear; deck-arrestor or sim
+13803,890100000080,8901,"Cruise ships, excursion boats, ferry-boats, c"
+13819,890300000080,8903,Yachts and other vessels for pleasure or spor
+13842,890500000080,8905,"Light-vessels, fire-floats, dredgers, floatin"
+13850,890600000080,8906,"Other vessels, including warships and lifeboa"
+13857,890700000080,8907,"Other floating structures (for example, rafts"
+13863,900100000080,9001,Optical fibres and optical fibre bundles; opt
+13884,900200000080,9002,"Lenses, prisms, mirrors and other optical ele"
+13890,900300000080,9003,"Frames and mountings for spectacles, goggles"
+13895,900400000080,9004,"Spectacles, goggles and the like, corrective,"
+13904,900500000080,9005,"Binoculars, monoculars, other optical telesco"
+13908,900600000080,9006,Photographic (other than cinematographic) cam
+13924,900700000080,9007,"Cinematographic cameras and projectors, wheth"
+13930,900800000080,9008,"Image projectors, other than cinematographic;"
+13933,901000000080,9010,Apparatus and equipment for photographic (inc
+13940,901100000080,9011,"Compound optical microscopes, including those"
+13951,901200000080,9012,Microscopes other than optical microscopes; d
+13958,901300000080,9013,Liquid crystal devices not constituting artic
+13972,901400000080,9014,Direction finding compasses; other navigation
+13979,901500000080,9015,Surveying (including photogrammetrical survey
+14000,901700000080,9017,"Drawing, marking-out or mathematical calculat"
+14014,901800000080,9018,"Instruments and appliances used in medical, s"
+14049,901900000080,9019,Mechano-therapy appliances; massage apparatus
+14055,902100000080,9021,"Orthopaedic appliances, including crutches, s"
+14074,902200000080,9022,Apparatus based on the use of X-rays or of al
+14090,902400000080,9024,Machines and appliances for testing the hardn
+14101,902500000080,9025,"Hydrometers and similar floating instruments,"
+14115,902600000080,9026,Instruments and apparatus for measuring or ch
+14132,902700000080,9027,Instruments and apparatus for physical or che
+14154,902800000080,9028,"Gas, liquid or electricity supply or producti"
+14165,902900000080,9029,"Revolution counters, production counters, tax"
+14173,903000000080,9030,"Oscilloscopes, spectrum analysers and other i"
+14193,903100000080,9031,"Measuring or checking instruments, appliances"
+14205,903200000080,9032,Automatic regulating or controlling instrumen
+14218,910100000080,9101,"Wristwatches, pocket-watches and other watche"
+14228,910200000080,9102,"Wristwatches, pocket-watches and other watche"
+14239,910300000080,9103,"Clocks with watch movements, excluding clocks"
+14243,910500000080,9105,Other clocks
+14253,910600000080,9106,Time of day recording apparatus and apparatus
+14257,910800000080,9108,"Watch movements, complete and assembled"
+14264,910900000080,9109,"Clock movements, complete and assembled"
+14267,911000000080,9110,"Complete watch or clock movements, unassemble"
+14275,911100000080,9111,Watch cases and parts thereof
+14280,911200000080,9112,Clock cases and cases of a similar type for o
+14283,911300000080,9113,"Watch straps, watch bands and watch bracelets"
+14289,911400000080,9114,Other clock or watch parts
+14295,920100000080,9201,"Pianos, including automatic pianos; harpsicho"
+14301,920200000080,9202,Other string musical instruments (for example
+14308,920500000080,9205,"Wind musical instruments (for example, keyboa"
+14316,920700000080,9207,"Musical instruments, the sound of which is pr"
+14325,920800000080,9208,"Musical boxes, fairground organs, mechanical"
+14328,920900000080,9209,"Parts (for example, mechanisms for musical bo"
+14342,930100000080,9301,"Military weapons, other than revolvers, pisto"
+14347,930300000080,9303,Other firearms and similar devices which oper
+14355,930500000080,9305,Parts and accessories of articles of headings
+14361,930600000080,9306,"Bombs, grenades, torpedoes, mines, missiles a"
+14376,940100000080,9401,"Seats (other than those of heading 9402), whe"
+14397,940200000080,9402,"Medical, surgical, dental or veterinary furni"
+14400,940300000080,9403,Other furniture and parts thereof
+14436,940400000080,9404,Mattress supports; articles of bedding and si
+14449,940500000080,9405,Lamps and lighting fittings including searchl
+14488,940600000080,9406,Prefabricated buildings
+14525,950400000080,9504,"Video game consoles and machines, articles fo"
+14536,950500000080,9505,"Festive, carnival or other entertainment arti"
+14541,950600000080,9506,Articles and equipment for general physical e
+14581,950700000080,9507,"Fishing rods, fish-hooks and other line fishi"
+14588,950800000080,9508,"Roundabouts, swings, shooting galleries and o"
+14592,960100000080,9601,"Worked ivory, bone, tortoiseshell, horn, antl"
+14596,960300000080,9603,"Brooms, brushes (including brushes constituti"
+14617,960600000080,9606,"Buttons, press-fasteners, snap-fasteners and"
+14624,960700000080,9607,Slide fasteners and parts thereof
+14631,960800000080,9608,Ballpoint pens; felt-tipped and other porous-
+14645,960900000080,9609,"Pencils (other than pencils of heading 9608),"
+14655,961200000080,9612,"Typewriter or similar ribbons, inked or other"
+14661,961300000080,9613,"Cigarette lighters and other lighters, whethe"
+14669,961500000080,9615,"Combs, hair-slides and the like; hairpins, cu"
+14674,961600000080,9616,"Scent sprays and similar toilet sprays, and m"
+14701,970100000080,9701,"Paintings, drawings and pastels, executed ent"
+15001,430400000080,4304,N/A2
+15002,570500000080,5705,N/A
+15003,630900000080,6309,N/A
+15004,650400000080,6504,N/A
+15005,650500000080,6505,N/A
+15006,950300000080,9503,"Tricycles, scooters, pedal cars and similar wheeled toys; dolls' carriages; dolls; other toys; reduced-size (scale) models and similar recreational mo"
+15007,420100000080,4201,Saddlery and harness for any animal (includin
+15008,853400000080,8534,Printed circuits
+15009,880600000080,8806,8806 custom info name

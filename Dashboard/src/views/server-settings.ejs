@@ -1,0 +1,191 @@
+<%- include('partials/head') %>
+
+<div class="card">
+  <h1>Server settings — operations &amp; fleet</h1>
+  <p class="muted">
+    Everything on this page travels through the shared <code>control.db</code> file. There is no
+    HTTP call between the dashboard and the middleware in either direction, so a command issued
+    while the middleware is stopped simply waits until it starts again.
+  </p>
+</div>
+
+<div class="card" id="alerts">
+  <h2>Alerts</h2>
+  <% if (!events.length) { %>
+    <p class="muted">No open alerts.</p>
+  <% } %>
+  <% events.forEach(e => { %>
+    <div class="alert sev-<%= e.severity.toLowerCase() %> <%= e.acknowledged_at ? 'acked' : '' %>">
+      <div class="alert-main">
+        <span class="chip sev"><%= e.severity %></span>
+        <strong><%= e.text %></strong>
+        <% if (e.occurrences > 1) { %><span class="muted small">seen <%= e.occurrences %>×</span><% } %>
+      </div>
+      <% if (e.hint) { %><div class="muted small"><%= e.hint %></div><% } %>
+      <div class="muted small">
+        <%= e.code %> · first <%= new Date(e.created_at).toISOString().slice(11,19) %>
+        · last <%= new Date(e.last_seen_at).toISOString().slice(11,19) %>
+        <% if (e.acknowledged_at) { %> · acknowledged by <%= e.acknowledged_by %><% } %>
+      </div>
+      <% if (!e.acknowledged_at) { %>
+        <form method="post" action="/settings/server/acknowledge/<%= e.id %>" class="inline">
+          <input type="hidden" name="_csrf" value="<%= csrf %>">
+          <button class="btn small">Acknowledge</button>
+        </form>
+        <span class="muted small">Acknowledging records that a person saw it. It does not clear the fault — only the middleware does that.</span>
+      <% } %>
+    </div>
+  <% }) %>
+
+  <% if (user.role === 'admin') { %>
+    <h3>Commands</h3>
+    <form method="post" action="/settings/server/command" class="inline">
+      <input type="hidden" name="_csrf" value="<%= csrf %>">
+      <button class="btn" name="command" value="VISION_ACCOUNT_REFRESH">Resume vision &amp; drain</button>
+      <button class="btn" name="command" value="DRAIN_QUEUE_NOW">Drain queue now</button>
+      <button class="btn" name="command" value="PING">Ping</button>
+    </form>
+    <p class="muted small">Commands take up to 15 seconds to be picked up. <code>PENDING</code> means not yet polled, never ignored.</p>
+    <table class="mini">
+      <% commands.forEach(c => { %>
+        <tr>
+          <td><%= new Date(c.issued_at).toISOString().slice(11,19) %></td>
+          <td><%= c.command %></td>
+          <td><%= c.status %></td>
+          <td class="muted"><%= c.result_detail || '' %></td>
+        </tr>
+      <% }) %>
+    </table>
+  <% } %>
+</div>
+
+<div class="card" id="vision">
+  <h2>Vision credentials</h2>
+  <% if (!vision) { %>
+    <p class="muted">Not readable — the middleware database is not reachable.</p>
+  <% } else { %>
+    <dl class="kv">
+      <dt>Key</dt><dd><code><%= vision.api_key_fingerprint || 'none' %></code> <span class="muted small">the key itself is encrypted and unreadable by the dashboard</span></dd>
+      <dt>Vision model</dt><dd><%= vision.vision_model || 'server default' %></dd>
+      <dt>Image model</dt><dd><%= vision.image_model || 'server default' %></dd>
+      <dt>Status</dt><dd><span class="chip"><%= vision.validation_status %></span> <%= vision.validation_detail || '' %></dd>
+      <dt>Verified</dt><dd><%= vision.validated_at ? new Date(vision.validated_at).toISOString().slice(0,16).replace('T',' ') : '—' %> <%= vision.updated_by ? 'by ' + vision.updated_by : '' %></dd>
+    </dl>
+  <% } %>
+
+  <% if (user.role === 'admin') { %>
+    <form method="post" action="/settings/server/vision" autocomplete="off">
+      <input type="hidden" name="_csrf" value="<%= csrf %>">
+      <label>New API key<input name="api_key" type="password" autocomplete="new-password" required></label>
+      <label>Vision model <span class="muted small">blank keeps the current one</span><input name="vision_model"></label>
+      <label>Image model <span class="muted small">blank keeps the current one</span><input name="image_model"></label>
+      <button class="btn primary">Submit for validation</button>
+    </form>
+    <p class="muted small">
+      The middleware tests the key against the live API before adopting it. A rejected key changes
+      nothing — the previous credentials stay active. The dashboard never stores, logs or
+      re-displays what you type here.
+    </p>
+  <% } %>
+
+  <% if (pending.length) { %>
+    <h3>Recent submissions</h3>
+    <table class="mini">
+      <% pending.forEach(p => { %>
+        <tr>
+          <td><%= new Date(p.submitted_at).toISOString().slice(11,19) %></td>
+          <td><%= p.status %></td>
+          <td class="muted">
+            <% if (p.status === 'PENDING' && p.resolved_at === null) { %>
+              Could not verify yet — retrying. <%= p.result_detail || '' %>
+            <% } else { %>
+              <%= p.result_detail || '' %>
+            <% } %>
+          </td>
+        </tr>
+      <% }) %>
+    </table>
+  <% } %>
+</div>
+
+<div class="card" id="operators">
+  <h2>Operators <span class="muted small">— the Android device logins, not dashboard users</span></h2>
+  <table class="grid">
+    <thead><tr><th>Username</th><th>Name</th><th>Status</th><th>Last seen</th><th>Created by</th><th></th></tr></thead>
+    <tbody>
+      <% const activeCount = operators.filter(o => o.status === 'ACTIVE').length; %>
+      <% operators.forEach(o => { %>
+        <tr>
+          <td>
+            <%= o.username %>
+            <% if (seeded.has(o.username)) { %><span class="tag warn" title="Seeded test account: password equals the username. Replace before production.">test account</span><% } %>
+          </td>
+          <td><%= o.display_name || '' %></td>
+          <td><span class="chip <%= o.status === 'ACTIVE' ? 'green' : '' %>"><%= o.status %></span></td>
+          <td><%= o.last_login_at ? new Date(o.last_login_at).toISOString().slice(0,16).replace('T',' ') : 'never' %></td>
+          <td class="muted small"><%= o.created_by || '' %></td>
+          <td>
+            <% if (user.role === 'admin') { %>
+              <form method="post" action="/settings/server/operator" class="inline"
+                    onsubmit="return confirm('<%= o.username %> is signed out immediately and cannot log in.')">
+                <input type="hidden" name="_csrf" value="<%= csrf %>">
+                <input type="hidden" name="username" value="<%= o.username %>">
+                <% if (o.status === 'ACTIVE') { %>
+                  <button class="btn small" name="action" value="DISABLE" <%= activeCount <= 1 ? 'disabled title="The last active operator cannot be removed."' : '' %>>Disable</button>
+                <% } else { %>
+                  <button class="btn small" name="action" value="ENABLE">Enable</button>
+                <% } %>
+              </form>
+            <% } %>
+          </td>
+        </tr>
+      <% }) %>
+    </tbody>
+  </table>
+
+  <% if (user.role === 'admin') { %>
+    <h3>Add an operator</h3>
+    <form method="post" action="/settings/server/operator" autocomplete="off">
+      <input type="hidden" name="_csrf" value="<%= csrf %>">
+      <input type="hidden" name="action" value="CREATE">
+      <label>Username<input name="username" pattern="[A-Za-z0-9._-]{3,64}" required></label>
+      <label>Password<input name="password" type="password" minlength="8" required></label>
+      <label>Display name<input name="display_name"></label>
+      <button class="btn primary">Create</button>
+    </form>
+    <p class="muted small">
+      Delete is a soft delete: it blocks access immediately and the operator's scan history is
+      kept. The last active operator cannot be disabled or deleted.
+    </p>
+  <% } %>
+
+  <% if (requests.length) { %>
+    <h3>Recent account requests</h3>
+    <table class="mini">
+      <% requests.forEach(r => { %>
+        <tr>
+          <td><%= new Date(r.submitted_at).toISOString().slice(11,19) %></td>
+          <td><%= r.action %></td>
+          <td><%= r.username %></td>
+          <td><%= r.status %></td>
+          <td class="muted"><%= r.result_detail || '' %></td>
+        </tr>
+      <% }) %>
+    </table>
+  <% } %>
+</div>
+
+<div class="card">
+  <h2>History</h2>
+  <table class="mini">
+    <% history.slice(0, 40).forEach(e => { %>
+      <tr>
+        <td class="nowrap"><%= new Date(e.last_seen_at).toISOString().slice(0,16).replace('T',' ') %></td>
+        <td><span class="chip sev sev-<%= e.severity.toLowerCase() %>"><%= e.severity %></span></td>
+        <td><%= e.code %></td>
+        <td><%= e.text %></td>
+      </tr>
+    <% }) %>
+  </table>
+</div>
+<%- include('partials/foot') %>

@@ -1,0 +1,112 @@
+<%- include('partials/head') %>
+
+<div class="card">
+  <h1><%= t('nav_import') %></h1>
+  <p class="muted">
+    Upload the Android app's daily ledger CSV. The file is checked byte-for-byte against every
+    previous import, so the same file can never be loaded twice — even under a different name.
+  </p>
+  <% if (!scans) { %>
+    <p class="notice amber">
+      <code>server_scans.db</code> is not reachable, so confidence scores, clone links and photo
+      paths cannot be filled in. The import still works; those columns stay empty and are picked
+      up automatically once the middleware is running.
+    </p>
+  <% } %>
+
+  <% if (error) { %><p class="error"><%= error %></p><% } %>
+
+  <form method="post" action="/import/preview" enctype="multipart/form-data">
+    <input type="hidden" name="_csrf" value="<%= csrf %>">
+    <label>CSV file<input type="file" name="file" accept=".csv,text/csv" required></label>
+    <label>If a barcode already exists
+      <select name="policy">
+        <option value="SKIP">Skip it and report (default)</option>
+        <option value="UPDATE_EMPTY_ONLY">Fill only the empty fields</option>
+        <option value="OVERWRITE">Overwrite the extracted fields</option>
+      </select>
+    </label>
+    <p class="muted small">
+      No policy touches a locked row, a decided price, an HS code, an article number, a package
+      code or a note. Those hold human work; a ledger re-import is not a reason to lose them.
+    </p>
+    <button class="btn primary">Preview</button>
+  </form>
+</div>
+
+<% if (preview && !preview.error) { %>
+  <div class="card">
+    <h2>Preview — nothing has been written yet</h2>
+    <p>
+      <strong><%= preview.total %></strong> rows ·
+      <%= preview.inserted %> new ·
+      <%= preview.updated %> updated ·
+      <%= preview.skipped %> skipped ·
+      <%= preview.failed %> unusable ·
+      <%= preview.flagged %> flagged for review
+    </p>
+    <div class="scroll short">
+      <table class="grid">
+        <thead><tr><th>Line</th><th>Barcode</th><th>Outcome</th><th>Detail</th></tr></thead>
+        <tbody>
+          <% preview.rows.slice(0, 200).forEach(r => { %>
+            <tr><td><%= r.line %></td><td><%= r.apparel_id || '' %></td><td><%= r.outcome %></td><td><%= r.detail || '' %></td></tr>
+          <% }) %>
+        </tbody>
+      </table>
+    </div>
+    <form method="post" action="/import/confirm">
+      <input type="hidden" name="_csrf" value="<%= csrf %>">
+      <input type="hidden" name="payload" value="<%= preview.payload %>">
+      <input type="hidden" name="filename" value="<%= preview.filename %>">
+      <input type="hidden" name="policy" value="<%= preview.policy %>">
+      <button class="btn primary">Import these <%= preview.total %> rows</button>
+      <a class="btn" href="/import">Cancel</a>
+    </form>
+  </div>
+<% } %>
+
+<% if (report && !report.error) { %>
+  <div class="card">
+    <h2>Imported</h2>
+    <p>
+      <strong><%= report.inserted %></strong> new ·
+      <%= report.updated %> updated ·
+      <%= report.skipped %> skipped ·
+      <%= report.failed %> unusable ·
+      <%= report.flagged %> flagged ·
+      <%= report.duplicatesFlagged %> possible duplicates
+    </p>
+    <p class="muted">
+      <% if (report.enrichment.available) { %>
+        Enriched <%= report.enrichment.enriched %> rows from the middleware (confidences, clone links, photos).
+      <% } else { %>
+        The middleware database was not reachable, so enrichment is pending.
+      <% } %>
+    </p>
+    <p><a class="btn" href="/items?review_state=NEEDS_REVIEW">Review the flagged rows</a></p>
+  </div>
+<% } %>
+
+<div class="card">
+  <h2>Import log</h2>
+  <table class="grid">
+    <thead><tr><th>When</th><th>File</th><th>By</th><th>Policy</th><th>New</th><th>Updated</th><th>Skipped</th><th>Flagged</th><th></th></tr></thead>
+    <tbody>
+      <% imports.forEach(i => { %>
+        <tr>
+          <td class="nowrap"><%= new Date(i.uploaded_at).toISOString().slice(0,16).replace('T',' ') %></td>
+          <td><%= i.filename %></td>
+          <td><%= i.uploaded_by %></td>
+          <td><%= i.policy %></td>
+          <td class="num"><%= i.rows_inserted %></td>
+          <td class="num"><%= i.rows_updated %></td>
+          <td class="num"><%= i.rows_skipped %></td>
+          <td class="num"><%= i.rows_flagged %></td>
+          <td><a href="/import/<%= i.id %>">rows</a></td>
+        </tr>
+      <% }) %>
+    </tbody>
+  </table>
+</div>
+<%- include('partials/foot') %>

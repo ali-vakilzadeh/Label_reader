@@ -1,0 +1,13 @@
+</main>
+<footer class="foot">
+  Label Reader dashboard ·
+  <% if (status) { %>
+    middleware heartbeat <%= new Date(status.heartbeat_at).toISOString().slice(11, 19) %> UTC
+  <% } else { %>
+    middleware not reachable
+  <% } %>
+  · nothing here is live — timestamps are as of the last poll
+</footer>
+<script src="/static/app.js" defer></script>
+</body>
+</html>

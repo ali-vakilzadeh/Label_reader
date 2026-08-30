@@ -1,0 +1,53 @@
+<%- include('partials/head') %>
+<div class="card">
+  <h1>Dashboard users</h1>
+  <p class="muted">
+    These are logins for this web interface. They are <strong>not</strong> the Android operator
+    accounts — those live in the middleware and are managed on the
+    <a href="/settings/server#operators">Server</a> page. Keeping the two apart is what stops a
+    mistake here from signing the warehouse fleet out.
+  </p>
+  <% if (error) { %><p class="error"><%= error %></p><% } %>
+
+  <table class="grid">
+    <thead><tr><th>Username</th><th>Name</th><th>Role</th><th>Status</th><th>Last login</th><th></th></tr></thead>
+    <tbody>
+      <% users.forEach(u => { %>
+        <tr>
+          <td><%= u.username %><% if (u.must_change_password) { %><span class="tag warn">must change password</span><% } %></td>
+          <td><%= u.display_name || '' %></td>
+          <td><%= u.role %></td>
+          <td><span class="chip <%= u.status === 'ACTIVE' ? 'green' : '' %>"><%= u.status %></span></td>
+          <td><%= u.last_login_at ? new Date(u.last_login_at).toISOString().slice(0,16).replace('T',' ') : 'never' %></td>
+          <td class="nowrap">
+            <form method="post" action="/settings/users/<%= u.id %>/status" class="inline">
+              <input type="hidden" name="_csrf" value="<%= csrf %>">
+              <input type="hidden" name="status" value="<%= u.status === 'ACTIVE' ? 'DISABLED' : 'ACTIVE' %>">
+              <button class="btn small"><%= u.status === 'ACTIVE' ? 'Disable' : 'Enable' %></button>
+            </form>
+            <form method="post" action="/settings/users/<%= u.id %>/password" class="inline" autocomplete="off">
+              <input type="hidden" name="_csrf" value="<%= csrf %>">
+              <input name="password" type="password" placeholder="new password" minlength="8" size="14" required>
+              <button class="btn small">Reset</button>
+            </form>
+          </td>
+        </tr>
+      <% }) %>
+    </tbody>
+  </table>
+
+  <h2>Add a user</h2>
+  <form method="post" action="/settings/users" autocomplete="off">
+    <input type="hidden" name="_csrf" value="<%= csrf %>">
+    <div class="field-grid">
+      <label>Username<input name="username" pattern="[A-Za-z0-9._-]{3,64}" required></label>
+      <label>Password<input name="password" type="password" minlength="8" required></label>
+      <label>Display name<input name="display_name"></label>
+      <label>Role
+        <select name="role"><option value="viewer">viewer — read and export</option><option value="admin">admin — everything</option></select>
+      </label>
+    </div>
+    <button class="btn primary">Create</button>
+  </form>
+</div>
+<%- include('partials/foot') %>

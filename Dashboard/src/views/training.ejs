@@ -1,0 +1,161 @@
+<%- include('partials/head') %>
+
+<div class="card">
+  <h1>Training data &amp; localisation</h1>
+</div>
+
+<div class="card" id="flywheel">
+  <h2>Training buffer (flywheel)</h2>
+  <% if (status) { %>
+    <% const pct = status.flywheel_capacity ? Math.round((status.flywheel_records / status.flywheel_capacity) * 100) : 0; %>
+    <div class="meter"><div class="meter-fill" style="width: <%= pct %>%"></div></div>
+    <p><%= status.flywheel_records %> of <%= status.flywheel_capacity %> samples (<%= pct %>%)</p>
+  <% } else { %>
+    <p class="muted">Counters unavailable — the middleware is not reachable.</p>
+  <% } %>
+
+  <p class="notice">
+    The training buffer holds <strong>copies</strong> of low-confidence scans, kept for future AI
+    improvement. When it is full the oldest copies are dropped.
+    <strong>Operational records and photos are never affected.</strong>
+  </p>
+
+  <% if (user.role === 'admin') { %>
+    <h3>Export, then purge — in that order</h3>
+    <ol class="steps">
+      <li>
+        <strong>Export.</strong> The watermark is read from <code>flywheel.db</code> before a
+        single row is written to the file.
+        <form method="post" action="/settings/training/export" class="inline">
+          <input type="hidden" name="_csrf" value="<%= csrf %>">
+          <button class="btn primary" <%= watermark === null ? 'disabled' : '' %>>
+            Export samples<% if (watermark !== null) { %> through #<%= watermark %><% } %>
+          </button>
+        </form>
+        <% if (watermark === null) { %><span class="muted small">Nothing to export, or flywheel.db is unreadable.</span><% } %>
+      </li>
+      <li>
+        <strong>Purge.</strong> Paste the <code>exported_through_id</code> from the file you just
+        downloaded. The command carries exactly that watermark, so samples captured while the
+        export was running survive to the next cycle.
+        <form method="post" action="/settings/training/purge" class="inline"
+              onsubmit="return confirm('Purge training samples up to this watermark? Operational records and photos are not affected.')">
+          <input type="hidden" name="_csrf" value="<%= csrf %>">
+          <input name="exported_through_id" type="number" min="1" placeholder="exported_through_id" required>
+          <button class="btn danger">Purge up to watermark</button>
+        </form>
+      </li>
+    </ol>
+    <p class="muted small">
+      A purge without a watermark is rejected by the middleware and deletes nothing — deliberately,
+      because "delete everything" would destroy samples that were never exported.
+    </p>
+  <% } %>
+</div>
+
+<div class="card" id="translations">
+  <h2>Message translations</h2>
+  <p class="muted">
+    Codes come from the middleware's own dictionary, which is reseeded at every boot — so this list
+    always matches exactly what the running server can emit. A missing translation falls back to
+    the English default; it never renders blank.
+  </p>
+  <% if (!dictionary.length) { %>
+    <p class="muted">Dictionary unavailable — the middleware is not reachable.</p>
+  <% } %>
+  <div class="scroll">
+    <table class="grid">
+      <thead><tr><th>Code</th><th>Severity</th><th>English</th><th>Armenian</th><th></th></tr></thead>
+      <tbody>
+        <% dictionary.forEach(d => { %>
+          <tr class="<%= d.translated_text ? '' : 'untranslated' %>">
+            <td class="nowrap"><%= d.code %></td>
+            <td><span class="chip sev sev-<%= String(d.severity).toLowerCase() %>"><%= d.severity %></span></td>
+            <td><%= d.default_text %><% if (d.operator_hint) { %><div class="muted small"><%= d.operator_hint %></div><% } %></td>
+            <td>
+              <form method="post" action="/settings/training/translation" class="inline">
+                <input type="hidden" name="_csrf" value="<%= csrf %>">
+                <input type="hidden" name="code" value="<%= d.code %>">
+                <input name="text" value="<%= d.translated_text || '' %>" size="34" placeholder="Armenian text">
+                <input name="hint" value="<%= d.translated_hint || '' %>" size="26" placeholder="Armenian hint">
+                <button class="btn small"><%= t('save') %></button>
+              </form>
+            </td>
+            <td></td>
+          </tr>
+        <% }) %>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="card" id="reference">
+  <h2>Reference data</h2>
+  <p class="muted">
+    Read from the middleware's own <code>reference_data/</code> — one shared copy, so the English
+    text the middleware matched against and the numeric id the dashboard exports can never drift
+    apart. Editing is by editing the CSV: these are the client's tables and must stay
+    hand-editable and diffable.
+  </p>
+  <table class="grid">
+    <thead><tr><th>Table</th><th>Rows</th><th>Armenian</th><th>File</th></tr></thead>
+    <tbody>
+      <% reference.forEach(r => { %>
+        <tr>
+          <td><%= r.key %></td>
+          <td class="num"><%= r.rows %></td>
+          <td><%= r.armenian ? 'yes' : '— English only' %></td>
+          <td class="muted small"><%= r.file %></td>
+        </tr>
+      <% }) %>
+    </tbody>
+  </table>
+  <p class="muted small">
+    Brand and country carry no Armenian column by client instruction — they are always written in
+    English, including on paperwork. <code>hs_map.csv</code> is filled in by Outfit's customs
+    person; until it has rows, HS codes come from history and from the code picker.
+  </p>
+  <% if (user.role === 'admin') { %>
+    <form method="post" action="/settings/training/reload-reference" class="inline">
+      <input type="hidden" name="_csrf" value="<%= csrf %>">
+      <button class="btn">Reload reference data</button>
+    </form>
+  <% } %>
+</div>
+
+<div class="card" id="engines">
+  <h2>Suggestion engines</h2>
+  <p class="muted">
+    Each engine is one self-contained file behind a single interface. Updating one does not touch
+    the rest of the code, and none of them calls an AI service — they are SQL over the history in
+    this database.
+  </p>
+  <table class="grid">
+    <thead><tr><th>Engine</th><th>Version</th><th>Fills</th></tr></thead>
+    <tbody>
+      <% engines.forEach(e => { %>
+        <tr><td><%= e.id %></td><td><%= e.version %></td><td class="muted small"><%= e.targets.join(', ') %></td></tr>
+      <% }) %>
+    </tbody>
+  </table>
+</div>
+
+<% if (user.role === 'admin') { %>
+<div class="card" id="tunables">
+  <h2>Tunables</h2>
+  <form method="post" action="/settings/tunables">
+    <input type="hidden" name="_csrf" value="<%= csrf %>">
+    <div class="field-grid">
+      <label>Fuzzy match minimum similarity<input name="fuzzy_min_similarity" value="<%= settings.fuzzy_min_similarity %>"></label>
+      <label>Duplicate window (hours)<input name="dup_window_hours" value="<%= settings.dup_window_hours %>"></label>
+      <label>Low confidence threshold<input name="low_confidence_threshold" value="<%= settings.low_confidence_threshold %>"></label>
+      <label>Price decay per month<input name="price_decay_per_month" value="<%= settings.price_decay_per_month %>"></label>
+      <label>Price decay floor<input name="price_decay_floor" value="<%= settings.price_decay_floor %>"></label>
+      <label>Default currency<input name="default_currency" value="<%= settings.default_currency %>"></label>
+      <label>Rows per page<input name="page_size" value="<%= settings.page_size %>"></label>
+    </div>
+    <button class="btn primary"><%= t('save') %></button>
+  </form>
+</div>
+<% } %>
+<%- include('partials/foot') %>

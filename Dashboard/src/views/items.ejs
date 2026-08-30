@@ -1,0 +1,181 @@
+<%- include('partials/head') %>
+<%#
+  `loc(dimension, englishValue)` is bound to the request locale in web/context.ts. Armenian
+  is joined at render time from the client's reference tables and is never stored on a row;
+  where no Armenian exists — brand and country always, by client instruction — it returns
+  the English word rather than a blank.
+%>
+
+<form class="filters card" method="get" action="/items">
+  <div class="filter-grid">
+    <label><%= t('search') %><input name="q" value="<%= filters.q || '' %>" placeholder="barcode, brand, notes"></label>
+    <label>From<input type="date" name="from" value="<%= (filters.from || '').slice(0,10) %>"></label>
+    <label>To<input type="date" name="to" value="<%= (filters.to || '').slice(0,10) %>"></label>
+    <label><%= t('operator') %>
+      <select name="operator">
+        <option value="">—</option>
+        <% operators.forEach(o => { %><option <%= filters.operator === o ? 'selected' : '' %>><%= o %></option><% }) %>
+      </select>
+    </label>
+    <label><%= t('brand') %>
+      <select name="brand">
+        <option value="">—</option>
+        <% options.brand.forEach(o => { %><option value="<%= o.value %>" <%= filters.brand === o.value ? 'selected' : '' %>><%= o.label %></option><% }) %>
+      </select>
+    </label>
+    <label><%= t('sub_category') %>
+      <select name="sub_category">
+        <option value="">—</option>
+        <% options.sub_category.forEach(o => { %><option value="<%= o.value %>" <%= filters.sub_category === o.value ? 'selected' : '' %>><%= o.label %></option><% }) %>
+      </select>
+    </label>
+    <label><%= t('gender') %>
+      <select name="gender">
+        <option value="">—</option>
+        <% options.gender.forEach(o => { %><option value="<%= o.value %>" <%= filters.gender === o.value ? 'selected' : '' %>><%= o.label %></option><% }) %>
+      </select>
+    </label>
+    <label><%= t('country') %>
+      <select name="country">
+        <option value="">—</option>
+        <% options.country.forEach(o => { %><option value="<%= o.value %>" <%= filters.country === o.value ? 'selected' : '' %>><%= o.label %></option><% }) %>
+      </select>
+    </label>
+    <label><%= t('review') %>
+      <select name="review_state">
+        <option value="">—</option>
+        <% ['NEW','NEEDS_REVIEW','REVIEWED','PARKED'].forEach(s => { %>
+          <option value="<%= s %>" <%= filters.review_state === s ? 'selected' : '' %>><%= s %></option>
+        <% }) %>
+      </select>
+    </label>
+    <label>Article
+      <select name="article_no">
+        <option value="">—</option>
+        <% articles.forEach(a => { %><option <%= filters.article_no === a ? 'selected' : '' %>><%= a %></option><% }) %>
+      </select>
+    </label>
+  </div>
+  <div class="chips">
+    <label class="chip"><input type="checkbox" name="duplicates" value="1" <%= filters.duplicates ? 'checked' : '' %>> Possible duplicates</label>
+    <label class="chip"><input type="checkbox" name="unmatched" value="1" <%= filters.unmatched ? 'checked' : '' %>> Unmatched taxonomy</label>
+    <label class="chip"><input type="checkbox" name="has_price" value="0" <%= filters.has_price === '0' ? 'checked' : '' %>> No price</label>
+    <label class="chip"><input type="checkbox" name="has_hs" value="0" <%= filters.has_hs === '0' ? 'checked' : '' %>> No HS code</label>
+    <label class="chip"><input type="checkbox" name="locked" value="1" <%= filters.locked === '1' ? 'checked' : '' %>> Locked</label>
+    <button class="btn primary" type="submit"><%= t('apply') %></button>
+    <a class="btn" href="/items"><%= t('reset') %></a>
+  </div>
+</form>
+
+<form method="post" action="/items/bulk" id="bulk">
+  <input type="hidden" name="_csrf" value="<%= csrf %>">
+  <input type="hidden" name="back" value="<%= path %>?<%= new URLSearchParams(query).toString() %>">
+
+  <div class="card">
+    <div class="table-head">
+      <span><strong><%= total %></strong> items · page <%= page %> of <%= pages %></span>
+      <span class="bulk-actions">
+        <select name="action">
+          <option value="">Bulk action…</option>
+          <option value="group">Group as article</option>
+          <option value="ungroup">Remove from article</option>
+          <option value="set_price">Set price</option>
+          <option value="set_package">Set package</option>
+          <option value="mark_reviewed">Mark reviewed</option>
+          <option value="recompute">Recompute suggestions</option>
+        </select>
+        <input name="article_no" placeholder="article no" size="10">
+        <input name="price" placeholder="price" size="6">
+        <input name="package_code" placeholder="package" size="8">
+        <button class="btn">Apply to selected</button>
+      </span>
+    </div>
+
+    <div class="scroll">
+    <table class="grid">
+      <thead>
+        <tr>
+          <th><input type="checkbox" id="select-all" aria-label="Select all"></th>
+          <th><%= t('barcode') %></th>
+          <th><%= t('brand') %></th>
+          <th><%= t('sub_category') %></th>
+          <th><%= t('gender') %></th>
+          <th><%= t('season') %></th>
+          <th><%= t('size') %></th>
+          <th><%= t('color') %></th>
+          <th><%= t('material') %></th>
+          <th><%= t('country') %></th>
+          <th><%= t('netto') %></th>
+          <th><%= t('brutto') %></th>
+          <th><%= t('pieces') %></th>
+          <th><%= t('price') %></th>
+          <th><%= t('hs_code') %></th>
+          <th><%= t('article_no') %></th>
+          <th><%= t('scanned_at') %></th>
+          <th><%= t('actions') %></th>
+        </tr>
+      </thead>
+      <tbody>
+      <% if (!items.length) { %>
+        <tr><td colspan="18" class="muted centre"><%= t('no_rows') %></td></tr>
+      <% } %>
+      <% items.forEach(item => { const reasons = reasonsFor(item.apparel_id); %>
+        <tr class="<%= item.locked ? 'locked' : '' %>">
+          <td><input type="checkbox" name="ids" value="<%= item.apparel_id %>"></td>
+          <td>
+            <a href="/items/<%= encodeURIComponent(item.apparel_id) %>"><%= item.apparel_id %></a>
+            <% if (item.cloned_from) { %><span class="tag" title="Copied from <%= item.cloned_from %> on the device">clone</span><% } %>
+            <% if (item.dup_group_id && !item.dup_dismissed) { %>
+              <span class="tag warn" title="<%= item.dup_reason %>">⚠ dup</span>
+            <% } %>
+            <% if (reasons.length) { %>
+              <span class="tag amber" title="<%= reasons.map(r => r.detail).join(' · ') %>">⚠ <%= reasons.length %></span>
+            <% } %>
+          </td>
+          <td><%= item.brand || '' %></td>
+          <td><%= loc('sub_category', item.sub_category) %></td>
+          <td><%= loc('gender', item.gender) %></td>
+          <td><%= loc('season', item.season) %></td>
+          <td><%= item.size || '' %></td>
+          <td><%= loc('color', item.color) %></td>
+          <td><%= loc('material', item.material) %></td>
+          <td><%= item.country || '' %></td>
+          <td><%= item.netto || '' %></td>
+          <td><%= item.brutto || '' %></td>
+          <td class="num"><%= item.pieces %></td>
+          <td class="num">
+            <% if (item.user_decided_price !== null) { %>
+              <strong><%= item.user_decided_price %></strong>
+            <% } else if (item.suggested_price !== null) { %>
+              <span class="suggest" title="<%= item.suggested_price_basis %> (n=<%= item.suggested_price_n %>)">~<%= item.suggested_price %></span>
+            <% } %>
+          </td>
+          <td><%= item.hs_code || '' %><% if (item.hs_code && item.hs_code_src !== 'MANUAL') { %><span class="suggest" title="<%= item.hs_code_basis %>">?</span><% } %></td>
+          <td><%= item.article_no || '' %></td>
+          <td class="nowrap"><%= item.scanned_at.slice(0, 16).replace('T', ' ') %></td>
+          <td class="actions">
+            <a class="icon" href="/items/<%= encodeURIComponent(item.apparel_id) %>" title="Open" aria-label="Open">✎</a>
+            <% if (item.key_photo_path) { %>
+              <span class="icon" title="Original photos on the server" aria-label="Original photos">🖼</span>
+            <% } %>
+            <% if (item.catalog_image_url) { %>
+              <span class="icon <%= item.rendering_status === 'COMPLETED' ? '' : 'pending' %>"
+                    title="<%= item.rendering_status === 'COMPLETED' ? 'Catalog image ready' : 'Catalog image scheduled for tonight (renders at 20:00)' %>"
+                    aria-label="Catalog image">✨</span>
+            <% } %>
+            <% if (item.locked) { %><span class="icon" title="Locked — edits and import overwrite are refused" aria-label="Locked">🔒</span><% } %>
+          </td>
+        </tr>
+      <% }) %>
+      </tbody>
+    </table>
+    </div>
+
+    <div class="pager">
+      <% const q = new URLSearchParams(query); %>
+      <% if (page > 1) { q.set('page', page - 1); %><a class="btn" href="/items?<%= q.toString() %>">← Previous</a><% } %>
+      <% if (page < pages) { q.set('page', page + 1); %><a class="btn" href="/items?<%= q.toString() %>">Next →</a><% } %>
+    </div>
+  </div>
+</form>
+<%- include('partials/foot') %>

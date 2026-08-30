@@ -1,7 +1,9 @@
 # Label Reader — Analytical Dashboard
 ## Final Consolidated Plan
 
-**Version 1.0 · 2026-08-28 · Status: seed specification, not yet implemented**
+**Version 1.1 · 2026-08-30 · Status: specification agreed; implementation started**
+
+*v1.1 folds in six client answers that close five of the seven open gaps. See §14.*
 
 Format note: Markdown, with machine-readable blocks (`json`) embedded where a builder needs
 literal values. A pure-JSON plan cannot carry the *why*, and the why is what keeps the next
@@ -54,26 +56,27 @@ revert them without addressing the reason.
 | 9 | Presets "filter out items where `cloned_from` is not empty" | **Clone rows are collapsed into their parent line, and their count is added to `Pieces`** | Simply dropping clones would under-report the shipment. A clone is a real physical item; it belongs in the quantity, not on its own invoice line. |
 | 10 | One user store, "admin/admin, max 10 users" | **Two separate identity stores, never mixed.** Dashboard logins live in `dashboard.db`; Android operator accounts live in the middleware and are only *requested* through `app_user_requests` | They have different lifetimes, different password rules and different blast radius. The seed plan blurred them, which would let a dashboard bug sign the warehouse fleet out. `admin`/`admin` is kept as the zero-point login but **must** force a password change on first use. |
 | 11 | (unstated) | **`server_scans.db` is read-only by discipline, but must be opened read-write at the OS level** | SQLite cannot read a WAL database without writing its `-shm` sibling. A genuinely read-only mount makes the file unreadable. This is the failure that appears hours after a working deploy — see `UI_messaging_protocol.md` §1. |
+| 12 | (unstated) | **The three suggestion engines are pluggable modules behind one interface** (§8.0) | Client instruction, 2026-08-30: updating one engine must not touch the rest of the codebase. They are also the parts most likely to be replaced once real pricing history exists. |
 
 ---
 
 ## 2. Scope — mapped to the Order Letter acceptance checklist
 
-Only the dashboard-side items. ⚠️ = covered with a caveat recorded in §14.
+Only the dashboard-side items.
 
 | Order Letter clause | Where |
 |---|---|
 | Dashboard imports, searches, filters and exports all scanned data | §5, §11.3, §9 |
 | Original product photos remain accessible | §5.2, §11.3 |
 | High-quality catalog images can be generated and reviewed | §11.3 (review + re-render request) |
-| Price offers generated from similar products in Outfit data and the market | §8.1 ⚠️ (Outfit data yes; market data has no source — §14.6) |
+| Price offers generated from similar products in Outfit data and the market | §8.1 — Outfit's own `user_decided_price` history **is** the market reference (client, 2026-08-30) |
 | Similar/repeated items grouped under one Article Number, item identity preserved | §7 |
 | Information copied efficiently to repeated/similar items | §7.3 |
 | Duplicate / near-duplicate warnings | §7.4 |
 | Each physical item individually identified and matched | §4 (`apparel_id` = barcode, primary key everywhere) |
 | Missing or uncertain information identified and corrected | §5.3, §11.3 review queue |
 | Duplicate/shared files not imported more than once | §5.1 (file digest ledger) |
-| Extract … Pieces, package code, care information | §4 ⚠️ — not in the app contract today; see §14.1 |
+| Extract … Pieces, package code, care information | §4 — columns exist and accept manual entry; automatic extraction deferred to a future release (client, 2026-08-30) |
 | No critical data loss during import/export | §5.1 (transactional import; nothing overwritten without confirmation) |
 | Database structure and architecture documentation delivered | This file + §13.4 |
 | Outfit can maintain and further develop independently | §3.3 (no build step, no framework, dependency-light single process) |
@@ -315,8 +318,16 @@ Read-only join on `apparel_id`, supplying what the CSV cannot:
 Runs on import, and again on a 5-minute timer for rows whose media or confidence is still null
 (a scan may be extracted after the ledger was exported).
 
-If `server_scans.db` is unreachable, import still succeeds — every enriched column is nullable by
-design. The dashboard degrades; it does not fail.
+The dashboard and the middleware **always run on the same server** (client, 2026-08-30), and the
+two are expected to be merged into one process later, so this path is the sanctioned mechanism
+rather than a fallback. It is still written defensively: if `server_scans.db` is unreachable,
+import succeeds anyway — every enriched column is nullable by design. The dashboard degrades; it
+does not fail.
+
+**Because a merge is planned, all four database handles are opened in one place**
+(`src/db/`), and no service reaches for a file path of its own. Merging the two processes should
+mean deleting `src/db/control.ts` and calling the middleware's own accessors — not a search across
+the codebase.
 
 ### 5.3 What "uncertain" means in the UI
 
@@ -342,7 +353,7 @@ middleware, so text and ids cannot diverge. A missing file is a boot error, not 
 | `color.csv` | 26 | ✅ | ✅ | ✅ | `Color_armenian` (lowercase 'a') |
 | `gender.csv` | 7 | ✅ | ✅ | ✅ | 4th column `Description` |
 | `season.csv` | 5 | ✅ | ✅ | ✅ | column order differs from the others |
-| *category* | 3 | ✅ | ❌ | ❌ | no client table exists (§14.3) |
+| *category* | 3 | ✅ | ✅ | ✅ | **new** `Dashboard/reference_data/category.csv` — see below |
 
 All files are UTF-8 **with BOM** and have inconsistent header names. The loader must strip the
 BOM, match headers case-insensitively on the substrings `armenian` / `english` / `id`, and ignore
@@ -354,10 +365,16 @@ New in this project, both hand-editable CSV in `Dashboard/reference_data/`:
   (951 rows: `ID, CN_Key, CN_Code, Name`). That file is SpreadsheetML XML, not a real `.xls`;
   extract it once with a throwaway script and commit the CSV. No spreadsheet parsing ships in the
   product.
-- **`hs_map.csv`** — **hand-authored**, the rule matrix §8.3 needs and that does not exist today:
-  `sub_category_en, gender, material_class, netto_g_max, cn_code, note`. Only 44 of the 951 CN
-  headings are apparel-relevant (chapters 42, 61, 62, 64, 65), so this is a tractable table for
-  the client's customs person to fill and maintain. See §14.5.
+- **`hs_map.csv`** — **hand-authored** rule matrix for §8.3:
+  `sub_category_en, gender, material_class, netto_g_max, cn_code, note`. Empty at first release.
+  Until it is filled, HS codes come from the history tier and from a searchable picker over the
+  full `custom_codes.csv` — see §8.3. The client is narrowing the 951 headings to the required
+  rows during the week of 2026-08-31; nothing in the code changes when they do.
+- **`category.csv`** — `Category_Armenian, Category_id, Category_English` for the three values
+  `clothing` / `shoe` / `accessories`. Armenian seeded from the middleware's
+  `data/translations.csv` (`հագուստ` / `կոշիկ` / `պարագաներ`), ids 1–3 assigned by this project
+  because no client table exists. **Flagged for client confirmation** — it is the one piece of
+  Armenian in the system that Outfit did not supply.
 
 ### 6.2 Resolution — the only algorithm allowed to change a value
 
@@ -386,8 +403,10 @@ it returns the English word.**
 - Missing Armenian → render the English word. Never blank, never machine-translated, never
   transliterated. `Unisex` and `All Seasons` already ship with English in the Armenian column;
   that is correct behaviour, not a bug to fix.
-- Brand, country and category have **no** Armenian column, so they render English under the AM
-  toggle. Visible and expected. See §14.3.
+- **Brand and country are always written in English, including on paperwork** (client,
+  2026-08-30). They render English under the AM toggle and export English in the Armenian presets,
+  by design rather than by omission. No Armenian column will be added to `brand.csv` or
+  `country.csv`.
 - Reverse mapping (Armenian input → English canonical) uses the same tables in the other
   direction and follows the same rule: no match → keep the Armenian text verbatim, flag
   `UNMATCHED`.
@@ -470,6 +489,50 @@ Common rules, non-negotiable:
 - **Every suggestion carries its basis and its sample size.** A median over 3 items and a median
   over 300 must not look alike.
 
+### 8.0 Modularity — how the engines are wired
+
+Client instruction, 2026-08-30: *keep the AI functions completely modular — if we need to update
+them, we don't have to change the whole code.* Enforced structurally, not by convention.
+
+Each engine is one file under `src/suggest/`, exporting a default object that satisfies a single
+interface. Nothing outside that folder knows how any engine works, and the folder's `index.ts` is
+the only import path the rest of the app uses.
+
+```json
+{
+  "interface": {
+    "id": "price | weight | hs_code — stable key, used in settings and in suggested_* columns",
+    "version": "string, bumped when the algorithm changes — stored on every suggestion it writes",
+    "targets": "which item columns this engine fills, e.g. ['suggested_price']",
+    "appliesTo": "(item) => boolean — cheap guard, e.g. weight only when both weights are null",
+    "suggest": "(item, ctx) => { value, basis, n, confidence } | null"
+  },
+  "ctx_gives_the_engine": ["a read-only dashboard.db handle",
+                           "the reference tables",
+                           "the settings key/value store",
+                           "a logger"],
+  "rules": [
+    "An engine may only read. It never writes an item row — the registry does that.",
+    "An engine returning null is normal and means 'no opinion', never an error.",
+    "Every non-null result carries basis + n; the registry refuses to store one without them.",
+    "Engines are pure functions of (item, history). No network, no AI SDK, no filesystem.",
+    "Adding an engine = adding one file and one line in the registry array.",
+    "Removing one = deleting the file. Nothing else references it."
+  ],
+  "registry_responsibilities": ["ordering", "guarding with appliesTo", "timing/logging",
+                                "writing suggested_* columns inside the caller's transaction",
+                                "never overwriting a value a human has set"]
+}
+```
+
+Engines run on import, on demand from the grid, and on a bulk *recompute suggestions* action.
+Recompute is always safe: it touches only `suggested_*` columns and never `user_decided_price`,
+`netto_g`, `brutto_g` or `hs_code` once those carry a human value.
+
+If a genuine model-backed engine is ever wanted, it drops into the same folder behind the same
+interface, and the "no AI in the dashboard" rule (override #5) becomes a one-file decision instead
+of an architectural one.
+
 ### 8.1 Price
 
 Candidate pool: rows with a non-empty `user_decided_price`, not soft-deleted.
@@ -493,7 +556,11 @@ the tier-1 min/max range. The user sees *"tag €79.90 · similar items sold €
 Constants live in `settings`. The basis string is written out in full: *"median of 34 items
 matching sub-category + brand + gender + season + material, −6 % for age"*.
 
-**Market data is not part of phase 1** — §14.6.
+**On "market data":** the order letter asks for offers based on Outfit's data *and the market*.
+The client confirmed on 2026-08-30 that no market feed exists and that the accumulated
+`user_decided_price` history **is** the market reference. That is exactly the pool above, so this
+clause is satisfied by §8.1 as written — there is nothing further to integrate. The retail tag
+price is shown beside the suggestion as context, never blended into it.
 
 ### 8.2 Weight
 
@@ -511,11 +578,20 @@ Never guessed, never zero-filled. A zero weight on a customs form is worse than 
    where the row specifies them). Most specific matching row wins → `hs_code_src = RULE`.
 2. **History** — most common `hs_code` among items matching §8.2 tier 1, n ≥ 3 →
    `hs_code_src = HISTORY`.
-3. Otherwise blank + flagged.
+3. Otherwise blank + flagged, and the user picks (see below).
 
-`custom_codes.csv` supplies the human-readable heading name shown next to the code so the user can
-sanity-check it. The code itself always comes from `hs_map.csv` or from history — never from a text
-search of the nomenclature, which would confidently return the wrong chapter.
+**The nomenclature, and why the picker is not the same thing as a suggestion.**
+`custom_codes.csv` carries **all 951 CN headings** converted from `docs/client_data/custom_codes.xls`
+(client, 2026-08-30 — the list will be cut down to the required rows during the week of
+2026-08-31; that is a data edit, and no code changes when it lands). The full list drives a
+**searchable picker** in the grid: type "trousers", see matching headings with their codes, choose
+one. That is a human selecting from a legal list, and it stamps `hs_code_src = MANUAL`.
+
+The *engine* still never text-searches the nomenclature to produce a value automatically — a
+free-text match across 951 headings will confidently return the wrong chapter, and an HS code on a
+customs form is a legal declaration. Rule and history only. `custom_codes.csv` also supplies the
+heading name displayed next to whatever code is set, from any source, so the value can always be
+sanity-checked in words.
 
 ---
 
@@ -737,7 +813,7 @@ export, no edits, no settings). Two roles, because a third one nobody uses is a 
   dist/            compiled JS
   views/           EJS
   public/          css, js, fonts — all vendored, nothing from a CDN
-  reference_data/  custom_codes.csv, hs_map.csv
+  reference_data/  custom_codes.csv, hs_map.csv, category.csv
   data/dashboard.db
   .env
 ```
@@ -770,56 +846,59 @@ letter §4 asks for.
 
 ---
 
-## 14. Open gaps — decisions or actions needed from others
+## 14. Open gaps — resolved and remaining
 
-Each is blocked on someone other than the dashboard developer. None blocks starting work; all are
-listed so nothing is discovered at acceptance.
+Five of the seven gaps in v1.0 were closed by the client on **2026-08-30**. They are kept here
+with their answers, because knowing a question was asked and settled is worth more than a shorter
+document.
 
-**14.1 `Pieces`, `package code` and `care information` are not in the app contract.**
-The order letter §2 requires them extracted. `api_contract.md` v1.2 defines 12 fields and none is
-one of these; the CSV export has no column for them. The client's own invoice has all three.
-→ The dashboard holds the columns and accepts manual entry today. **Ask:** should `api_contract`
-v1.3 add them, or do they stay dashboard-entered? An app-side scope question with a cost.
+### Closed
 
-**14.2 The CSV ledger cannot carry `cloned_from`, article, or confidence.**
-Every export preset needs `cloned_from`; the review queue needs confidence. Path B (§5.2) covers
-this **only while the dashboard runs on the same host as the middleware**. Installed elsewhere,
-these features go dark.
-→ **Requested CSV v2**, additive so a v1 file still imports: `ClonedFrom`, `Pieces`, `PackageCode`,
-`CareInfo`, `MinConfidence`, `CatalogImageUrl`, `NeedsReview`. The importer must accept both
-versions by header detection from day one.
+**14.1 `Pieces`, `package code`, `care information` — deferred by agreement.** ✅
+The order letter requires them; `api_contract.md` v1.2 does not carry them. **Client: these lie
+for future expansion.** No change is requested of the Android developer. The dashboard keeps the
+three columns, accepts manual entry and bulk edit, and exports them wherever the client's own
+layouts have them (`Pieces` and `package` are both in the seller invoice). When the app supplies
+them later, the importer picks them up from a CSV v2 with no schema change.
 
-**14.3 No Armenian for brand, country or category.**
-`brand.csv` and `country.csv` have no Armenian column; category has no table at all. Under the AM
-toggle these render English — correct per the never-translate rule, but a customs document in
-Armenia will likely need Armenian country names. `legalArmenianMap.json` already holds ~40 of them
-and could seed the column.
-→ **Ask the client** to add `Country_Armenian` to `country.csv` and supply the three category
-words. A data change; no code change.
+**14.2 CSV cannot carry `cloned_from` or confidence — no longer a risk.** ✅
+**Client: the dashboard and middleware will always run on one server, and will be merged later.**
+So Path B (§5.2) is the sanctioned source for both, not a host-dependent fallback. The importer
+still accepts an extended CSV by header detection if one ever appears. The planned merge is why
+all database handles live in `src/db/` and nowhere else.
+
+**14.3 Armenian for brand, country and category.** ✅
+**Client: brand and country are always written in English, even on the paperwork.** No Armenian
+column will be added to either, and rendering them in English under the AM toggle is now
+specified behaviour rather than a shortfall. Category is covered by a new
+`Dashboard/reference_data/category.csv` seeded from the middleware's `translations.csv` (§6.1) —
+the only Armenian in the system not supplied by Outfit, and flagged for their confirmation.
+
+**14.5 `hs_map.csv`.** ✅ (partially, by design)
+**Client: use all headings from `custom_codes.xls` for now; the list will be cut down to the
+required rows this week. Convert it to CSV for the dashboard.** Done — the conversion is committed
+as `Dashboard/reference_data/custom_codes.csv` (951 rows), the file drives the searchable picker,
+and `hs_map.csv` ships empty for the client to fill. Narrowing the list is a data edit; no code
+depends on its size. The rule tier of §8.3 stays dormant until the mapping exists; the history
+tier and the picker work from day one.
+
+**14.6 "Market data" pricing.** ✅
+**Client: market data is non-existent; `user_decided_price` serves that purpose.** That is already
+the candidate pool in §8.1, so the order-letter clause is satisfied as written and nothing further
+needs integrating. Removed from the risk list.
+
+### Remaining
 
 **14.4 No size reference table.**
-`size` is free text (`XL`, `32/34`, `40R`, `TU`, `LH`). Never snapped, never translated. Grouping
-and price tiers treat it as an opaque string, so `XL` and `xl` are different values.
-→ Recommend a small `size.csv` with aliases if the client wants tighter grouping. Low priority.
-
-**14.5 `hs_map.csv` does not exist and must be hand-authored.**
-`custom_codes.xls` is the full CN nomenclature at 4-digit heading level with **no** link to
-sub-category, gender or material — there is no matrix to parse. The seed plan assumed one. Only 44
-headings are apparel-relevant, so this is roughly a day of work for the client's customs person,
-not a research project.
-→ **Blocks §8.3's rule tier.** The history tier still works once codes and prices accumulate.
-
-**14.6 "Market data" pricing has no data source.**
-The order letter asks for offers based on "similar products in Outfit Data **and the market**".
-Outfit's own data is covered (§8.1). Market data needs an external price feed or scraper — a new
-integration, a recurring cost, and a legal question about the source.
-→ **Flag to the client as outside the stated scope** until a source is named. Phase 1 shows the
-retail tag price alongside the suggestion, the closest honest proxy.
+`size` stays free text (`XL`, `32/34`, `40R`, `TU`, `LH`). Never snapped, never translated.
+Grouping and price tier 1 treat it as an opaque string, so `XL` and `xl` do not match. A small
+`size.csv` with aliases would tighten grouping. Low priority; not blocking.
 
 **14.7 Catalog images render nightly at 20:00.**
 A same-day scan has a valid `catalog_image_url` that 404s until the render runs
-(`server_specification.json`). The grid must render this as *"scheduled for tonight"*, not as a
-broken image — otherwise every operator reports a bug every afternoon.
+(`server_specification.json`). The grid renders this as *"scheduled for tonight"*, never as a
+broken image — otherwise every operator reports a bug every afternoon. Handled in the UI; listed
+here so nobody later "fixes" it.
 
 ---
 
@@ -836,8 +915,9 @@ broken image — otherwise every operator reports a bug every afternoon.
 | **7 · Server settings** | Cards 6 and 7 in full, including the flywheel watermark flow | Every rule in §10.1 verified against a live middleware |
 | **8 · Analytics & polish** | Charts, saved column sets, keyboard navigation | — |
 
-Phase 2 depends on the middleware being deployed (Path B). Phase 6's HS rule tier depends on
-§14.5. Nothing else has an external dependency.
+Phase 2 depends on the middleware being deployed (Path B). Phase 6's HS **rule** tier stays
+dormant until the client fills `hs_map.csv`; its history tier and the code picker work without it.
+Nothing else has an external dependency.
 
 ---
 

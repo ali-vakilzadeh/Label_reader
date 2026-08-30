@@ -1,0 +1,16 @@
+<%- include('partials/head') %>
+<div class="card narrow">
+  <h1>Confirm</h1>
+  <p>Issue <code><%= command %></code> to the middleware?</p>
+  <p class="muted small">
+    It is queued in <code>control.db</code> and picked up within about 15 seconds. If the
+    middleware is stopped, the command simply waits until it starts again.
+  </p>
+  <form method="post" action="/settings/server/command">
+    <input type="hidden" name="_csrf" value="<%= csrf %>">
+    <input type="hidden" name="command" value="<%= command %>">
+    <button class="btn primary">Issue command</button>
+    <a class="btn" href="/settings/server">Cancel</a>
+  </form>
+</div>
+<%- include('partials/foot') %>

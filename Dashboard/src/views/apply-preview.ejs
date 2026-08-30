@@ -1,0 +1,45 @@
+<%- include('partials/head') %>
+<div class="card">
+  <h1>Apply to group</h1>
+  <p class="muted">
+    Copying from <a href="/items/<%= encodeURIComponent(source.apparel_id) %>"><%= source.apparel_id %></a>.
+    Nothing has changed yet. Locked rows are listed but will be skipped.
+  </p>
+
+  <% if (!fields.length) { %>
+    <p class="error">No fields were selected.</p>
+  <% } %>
+
+  <form method="post" action="/items/<%= encodeURIComponent(source.apparel_id) %>/apply">
+    <input type="hidden" name="_csrf" value="<%= csrf %>">
+    <% fields.forEach(f => { %><input type="hidden" name="fields" value="<%= f %>"><% }) %>
+
+    <table class="grid">
+      <thead><tr><th></th><th>Item</th><th>Changes</th></tr></thead>
+      <tbody>
+        <% preview.forEach(p => { %>
+          <tr class="<%= p.locked ? 'locked' : '' %>">
+            <td>
+              <% if (!p.locked) { %>
+                <input type="checkbox" name="targets" value="<%= p.apparel_id %>" checked>
+              <% } else { %>🔒<% } %>
+            </td>
+            <td><a href="/items/<%= encodeURIComponent(p.apparel_id) %>"><%= p.apparel_id %></a></td>
+            <td>
+              <% if (!p.changes.length) { %>
+                <span class="muted">already identical</span>
+              <% } %>
+              <% p.changes.forEach(c => { %>
+                <div class="small"><code><%= c.field %></code>: <span class="muted"><%= c.from === null ? '—' : c.from %></span> → <strong><%= c.to === null ? '—' : c.to %></strong></div>
+              <% }) %>
+            </td>
+          </tr>
+        <% }) %>
+      </tbody>
+    </table>
+
+    <button class="btn primary">Apply these changes</button>
+    <a class="btn" href="/items/<%= encodeURIComponent(source.apparel_id) %>">Cancel</a>
+  </form>
+</div>
+<%- include('partials/foot') %>

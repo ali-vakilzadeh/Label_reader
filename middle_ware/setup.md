@@ -116,8 +116,16 @@ cd /opt/apparel-middleware
 
 npm ci            # installs everything, including build tools
 npm run build     # compiles TypeScript to dist/
-npm prune --omit=dev   # drop build-only packages from the runtime
 ```
+
+> Pruning comes later, in [step 6](#6-first-run), once the test suite has run — the tests need
+> the dev dependencies.
+
+> If `npm ci` dies on `better-sqlite3` with `prebuild-install ... Request timed out` or a
+> `node-gyp` `ECONNRESET` fetching node headers, the server cannot reach github.com or
+> nodejs.org. See
+> [`npm ci` fails on `better-sqlite3`](#npm-ci-fails-on-better-sqlite3) — do not go on until
+> `npm ci` completes.
 
 Verify the tables shipped:
 
@@ -211,9 +219,15 @@ $ curl -s -X POST localhost:3000/api/v1/auth/login \
 Stop it with `Ctrl-C`. Then confirm the offline test suite passes on this machine:
 
 ```bash
-$ npm ci && npm run test:all      # ~355 checks, no network needed
-$ npm prune --omit=dev
+$ npm run test:all        # ~355 checks, no network needed
+$ npm prune --omit=dev    # now drop the build-only packages from the runtime
 ```
+
+> **Do not put `npm ci` in front of `npm run test:all`.** `npm ci` wipes `node_modules` and
+> re-runs the `better-sqlite3` native install, which reaches out to github.com and nodejs.org.
+> On a server without that access it destroys the working build you just made. Run the tests
+> against the tree from step 4, then prune. If you ever do need to reinstall, follow
+> [`npm ci` fails on `better-sqlite3`](#npm-ci-fails-on-better-sqlite3) first.
 
 ---
 
@@ -395,9 +409,77 @@ systemctl start apparel-middleware
 Database schema changes apply automatically at boot. Your `.env`, databases, uploads and rendered
 catalog images are untouched by an update.
 
+> `npm ci` here rebuilds `better-sqlite3` from scratch. If the server has no github.com or
+> nodejs.org access, substitute the two commands from
+> [`npm ci` fails on `better-sqlite3`](#npm-ci-fails-on-better-sqlite3) for the `npm ci` line, and
+> keep `/root/nodehdr` in place between updates.
+
 ---
 
 ## 13. Troubleshooting
+
+### `npm ci` fails on `better-sqlite3`
+
+```
+npm error path /opt/apparel-middleware/node_modules/better-sqlite3
+npm error command sh -c prebuild-install || node-gyp rebuild --release
+npm error prebuild-install warn install Request timed out
+npm error gyp ERR! stack FetchError: request to
+  https://nodejs.org/download/release/vXX/node-vXX-headers.tar.gz failed
+```
+
+Nothing is wrong with the code or your Node version. `better-sqlite3` is the only dependency
+that needs the network at install time, and it needs two hosts the rest of the install does not:
+**github.com** for its prebuilt binary, and, when that fails, **nodejs.org** for the headers to
+compile its own. Both are unreachable from some hosting regions even though
+`registry.npmjs.org` works fine.
+
+The fix is to carry the Node headers in by hand and compile locally. On a machine that *does*
+have access, download the headers matching the server's Node version exactly:
+
+```
+https://nodejs.org/download/release/v20.20.2/node-v20.20.2-headers.tar.gz
+```
+
+Copy them over and build:
+
+```bash
+$ scp node-v20.20.2-headers.tar.gz root@YOUR_IP:/root/
+```
+```bash
+mkdir -p /root/nodehdr && tar xf /root/node-v20.20.2-headers.tar.gz -C /root/nodehdr
+
+cd /opt/apparel-middleware
+npm ci --ignore-scripts
+npm_config_nodedir=/root/nodehdr/node-v20.20.2 npm rebuild better-sqlite3 --build-from-source
+npm run build
+```
+
+Use `npm_config_nodedir`, **not** `npm_config_tarball` — to `node-gyp` that second variable means
+the headers tarball and the two conflict. `--ignore-scripts` is safe here: no other dependency in
+the lockfile needs its install script.
+
+Confirm the native module actually loaded:
+
+```bash
+$ node -e "const db=require('better-sqlite3')(':memory:'); console.log(db.prepare('select 1 v').get())"
+{ v: 1 }
+```
+
+This is why step 6 runs `npm run test:all` **without** a preceding `npm ci`, and why the prune is
+left until after the tests: a second `npm ci` would delete the module you just built and fail the
+same way.
+
+Two lighter alternatives, if the server has partial access:
+
+| Situation | Try |
+|---|---|
+| Broken IPv6 / flaky TLS rather than a block | `echo 'precedence ::ffff:0:0/96  100' >> /etc/gai.conf`, then retry `npm ci` |
+| A reachable mirror | in `/opt/apparel-middleware/.npmrc`: `better_sqlite3_binary_host_mirror=https://registry.npmmirror.com/-/binary/better-sqlite3` and `disturl=https://registry.npmmirror.com/-/binary/node` |
+
+An `.npmrc` mirror is the only one of the three that survives a later `npm ci`, so prefer it if it
+works — otherwise keep the headers in `/root/nodehdr` and repeat the two commands above after
+every update.
 
 ### The service will not start
 

@@ -1,0 +1,42 @@
+<%- include('partials/head') %>
+
+<form class="filters card" method="get" action="/analytics">
+  <div class="filter-grid">
+    <label>From<input type="date" name="from" value="<%= (filters.from || '').slice(0,10) %>"></label>
+    <label>To<input type="date" name="to" value="<%= (filters.to || '').slice(0,10) %>"></label>
+    <label><%= t('operator') %>
+      <select name="operator">
+        <option value="">—</option>
+        <% operators.forEach(o => { %><option <%= filters.operator === o ? 'selected' : '' %>><%= o %></option><% }) %>
+      </select>
+    </label>
+  </div>
+  <button class="btn primary"><%= t('apply') %></button>
+  <a class="btn" href="/analytics"><%= t('reset') %></a>
+</form>
+
+<div class="card">
+  <h2>Coverage</h2>
+  <%
+    const c = coverage;
+    const pct = (n) => (c.total ? Math.round((n / c.total) * 100) : 0);
+  %>
+  <div class="tiles">
+    <div class="tile"><span class="big"><%= c.total %></span> items</div>
+    <div class="tile"><span class="big"><%= pct(c.priced) %>%</span> priced <span class="muted small"><%= c.priced %></span></div>
+    <div class="tile"><span class="big"><%= pct(c.coded) %>%</span> HS coded <span class="muted small"><%= c.coded %></span></div>
+    <div class="tile"><span class="big"><%= pct(c.weighed) %>%</span> weighed <span class="muted small"><%= c.weighed %></span></div>
+    <div class="tile"><span class="big"><%= pct(c.reviewed) %>%</span> reviewed <span class="muted small"><%= c.reviewed %></span></div>
+  </div>
+  <p class="muted small">Every figure and chart on this page honours the filters above, so nothing here can disagree with the item list.</p>
+</div>
+
+<div class="card charts">
+  <%- include('partials/barchart', { heading: 'Scans per day', points: charts.perDay }) %>
+  <%- include('partials/barchart', { heading: 'Scans per operator', points: charts.perOperator }) %>
+  <%- include('partials/barchart', { heading: 'Review state', points: charts.review }) %>
+  <%- include('partials/barchart', { heading: 'Top brands', points: charts.brands }) %>
+  <%- include('partials/barchart', { heading: 'Top sub-categories', points: charts.subCategories }) %>
+  <%- include('partials/barchart', { heading: 'Rows imported per day', points: charts.imports }) %>
+</div>
+<%- include('partials/foot') %>

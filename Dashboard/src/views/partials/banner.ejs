@@ -1,0 +1,27 @@
+<%#
+  The status banner (plan §10.2). Evaluated server-side in services/control.ts, in the
+  protocol's priority order. The heartbeat check comes first and is not optional: a dead
+  middleware leaves state = 'OK' behind, and that row is a corpse, not a status.
+%>
+<div class="banner banner-<%= banner.level %>" id="status-banner" data-code="<%= banner.code %>">
+  <div class="banner-main">
+    <strong><%= banner.text %></strong>
+    <% if (banner.action) { %>
+      <a class="btn small" href="<%= banner.action.href %>"><%= banner.action.label %></a>
+    <% } %>
+  </div>
+  <% if (banner.reassurance) { %>
+    <div class="banner-sub"><%= banner.reassurance %></div>
+  <% } %>
+  <% if (status) { %>
+    <div class="banner-tiles">
+      <span title="Server state"><%= status.state %></span>
+      <span title="Vision">vision <%= status.vision_state %></span>
+      <span title="Scans awaiting extraction — non-zero is normal throughput">queue <%= status.queue_pending %></span>
+      <% if (status.queue_parked > 0) { %>
+        <span class="warn" title="Parked scans always need a person">parked <%= status.queue_parked %></span>
+      <% } %>
+      <span title="Training buffer">flywheel <%= status.flywheel_records %>/<%= status.flywheel_capacity %></span>
+    </div>
+  <% } %>
+</div>

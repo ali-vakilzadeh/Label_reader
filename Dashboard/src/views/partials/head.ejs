@@ -1,0 +1,44 @@
+<%#
+  Page shell. EJS has no layout mechanism of its own and this project deliberately adds no
+  package for one — every view opens with this include and closes with partials/foot.
+%>
+<!DOCTYPE html>
+<html lang="<%= locale %>">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title><%= title %> — <%= t('app_title') %></title>
+  <link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+<% if (user) { %>
+  <header class="topbar">
+    <a class="brand" href="/items"><%= t('app_title') %></a>
+    <nav>
+      <a href="/items" class="<%= path.startsWith('/items') ? 'on' : '' %>"><%= t('nav_items') %></a>
+      <a href="/import" class="<%= path.startsWith('/import') ? 'on' : '' %>"><%= t('nav_import') %></a>
+      <a href="/analytics" class="<%= path.startsWith('/analytics') ? 'on' : '' %>"><%= t('nav_analytics') %></a>
+      <a href="/exports" class="<%= path.startsWith('/exports') ? 'on' : '' %>"><%= t('nav_exports') %></a>
+      <a href="/settings/server" class="<%= path === '/settings/server' ? 'on' : '' %>"><%= t('nav_server') %></a>
+      <a href="/settings/training" class="<%= path === '/settings/training' ? 'on' : '' %>"><%= t('nav_training') %></a>
+      <% if (user.role === 'admin') { %>
+        <a href="/settings/users" class="<%= path === '/settings/users' ? 'on' : '' %>"><%= t('nav_users') %></a>
+      <% } %>
+    </nav>
+    <div class="topbar-right">
+      <form method="post" action="/account/locale" class="inline">
+        <input type="hidden" name="_csrf" value="<%= csrf %>">
+        <input type="hidden" name="back" value="<%= path %>">
+        <button name="locale" value="en" class="lang <%= locale === 'en' ? 'on' : '' %>" title="English">EN</button>
+        <button name="locale" value="hy" class="lang <%= locale === 'hy' ? 'on' : '' %>" title="Հայերեն">AM</button>
+      </form>
+      <span class="who"><%= user.display_name || user.username %></span>
+      <form method="post" action="/logout" class="inline">
+        <input type="hidden" name="_csrf" value="<%= csrf %>">
+        <button class="link"><%= t('nav_logout') %></button>
+      </form>
+    </div>
+  </header>
+  <%- include('banner') %>
+<% } %>
+<main class="<%= user ? '' : 'centred' %>">

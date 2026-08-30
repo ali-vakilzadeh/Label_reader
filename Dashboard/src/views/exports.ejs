@@ -1,0 +1,89 @@
+<%- include('partials/head') %>
+
+<div class="card">
+  <h1><%= t('nav_exports') %></h1>
+
+  <form method="get" action="/exports" class="filters">
+    <div class="filter-grid">
+      <label>Preset
+        <select name="preset" onchange="this.form.submit()">
+          <% presets.forEach(p => { %>
+            <option value="<%= p.id %>" <%= preset.id === p.id ? 'selected' : '' %>><%= p.label %></option>
+          <% }) %>
+        </select>
+      </label>
+      <label>Language
+        <select name="locale" onchange="this.form.submit()">
+          <option value="en" <%= locale === 'en' ? 'selected' : '' %>>English</option>
+          <option value="hy" <%= locale === 'hy' ? 'selected' : '' %>>Հայերեն</option>
+        </select>
+      </label>
+      <label>From<input type="date" name="from" value="<%= (filters.from || '').slice(0,10) %>"></label>
+      <label>To<input type="date" name="to" value="<%= (filters.to || '').slice(0,10) %>"></label>
+      <label>Last N items<input type="number" name="lastN" min="1" value="<%= filters.lastN || '' %>"></label>
+      <label><%= t('operator') %>
+        <select name="operator">
+          <option value="">—</option>
+          <% operators.forEach(o => { %><option <%= filters.operator === o ? 'selected' : '' %>><%= o %></option><% }) %>
+        </select>
+      </label>
+    </div>
+    <button class="btn"><%= t('apply') %></button>
+  </form>
+
+  <p class="muted"><%= preset.description %></p>
+
+  <p class="counts">
+    <strong><%= rowCount %></strong> lines ·
+    <%= itemCount %> physical items ·
+    <%= pieces %> pieces
+    <% if (preset.collapse) { %>
+      <span class="muted">— clone and article-group members are collapsed into one line each, and their count is added to Pieces.</span>
+    <% } %>
+  </p>
+
+  <% if (warnings.length) { %>
+    <div class="notice amber">
+      <strong>Before you export</strong>
+      <ul>
+        <% warnings.forEach(w => { %>
+          <li><%= w.message %> <span class="muted small"><%= w.ids.slice(0, 8).join(', ') %><%= w.ids.length > 8 ? '…' : '' %></span></li>
+        <% }) %>
+      </ul>
+      <p class="muted small">You can still export. This is stated here rather than discovered at the customs desk.</p>
+    </div>
+  <% } %>
+
+  <form method="post" action="/exports/run">
+    <input type="hidden" name="_csrf" value="<%= csrf %>">
+    <input type="hidden" name="preset" value="<%= preset.id %>">
+    <input type="hidden" name="locale" value="<%= locale %>">
+    <% ['from','to','lastN','operator','brand','sub_category','gender','season','country','category','review_state','article_no','export_batch','q'].forEach(k => { %>
+      <% if (filters[k]) { %><input type="hidden" name="<%= k %>" value="<%= filters[k] %>"><% } %>
+    <% }) %>
+    <button class="btn primary" name="format" value="csv">Download CSV</button>
+    <button class="btn" name="format" value="xlsx">Download XLSX</button>
+    <span class="muted small">CSV carries a UTF-8 BOM so Excel reads Armenian correctly. XLSX carries its own encoding.</span>
+  </form>
+</div>
+
+<div class="card">
+  <h2>Recent exports</h2>
+  <table class="grid">
+    <thead><tr><th>When</th><th>Preset</th><th>Language</th><th>Format</th><th>Rows</th><th>By</th><th>File</th></tr></thead>
+    <tbody>
+      <% history.forEach(h => { %>
+        <tr>
+          <td class="nowrap"><%= new Date(h.at).toISOString().slice(0,16).replace('T',' ') %></td>
+          <td><%= h.preset %></td>
+          <td><%= h.locale %></td>
+          <td><%= h.format %></td>
+          <td class="num"><%= h.row_count %></td>
+          <td><%= h.actor %></td>
+          <td class="muted small"><%= h.filename %></td>
+        </tr>
+      <% }) %>
+    </tbody>
+  </table>
+</div>
+<%- include('partials/foot') %>

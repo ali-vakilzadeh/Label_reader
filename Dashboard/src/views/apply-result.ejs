@@ -1,0 +1,13 @@
+<%- include('partials/head') %>
+<div class="card">
+  <h1>Applied</h1>
+  <p>
+    <strong><%= result.updated %></strong> item<%= result.updated === 1 ? '' : 's' %> updated from
+    <a href="/items/<%= encodeURIComponent(source.apparel_id) %>"><%= source.apparel_id %></a>.
+    <% if (result.skippedLocked) { %>
+      <%= result.skippedLocked %> locked row<%= result.skippedLocked === 1 ? ' was' : 's were' %> skipped.
+    <% } %>
+  </p>
+  <p><a class="btn" href="/items?article_no=<%= encodeURIComponent(source.article_no || '') %>">Back to the group</a></p>
+</div>
+<%- include('partials/foot') %>

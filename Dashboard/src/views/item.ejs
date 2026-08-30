@@ -1,0 +1,196 @@
+<%- include('partials/head') %>
+
+<div class="split">
+  <div class="card">
+    <div class="table-head">
+      <h1><%= item.apparel_id %></h1>
+      <span>
+        <% if (item.locked) { %>
+          <form method="post" action="/items/<%= encodeURIComponent(item.apparel_id) %>/lock" class="inline">
+            <input type="hidden" name="_csrf" value="<%= csrf %>">
+            <input type="hidden" name="locked" value="0">
+            <button class="btn">🔓 <%= t('unlock') %></button>
+          </form>
+        <% } else { %>
+          <form method="post" action="/items/<%= encodeURIComponent(item.apparel_id) %>/lock" class="inline">
+            <input type="hidden" name="_csrf" value="<%= csrf %>">
+            <input type="hidden" name="locked" value="1">
+            <button class="btn">🔒 <%= t('lock') %></button>
+          </form>
+          <form method="post" action="/items/<%= encodeURIComponent(item.apparel_id) %>/delete" class="inline"
+                onsubmit="return confirm('Soft-delete this item? It is hidden from lists and exports but never removed from the database.')">
+            <input type="hidden" name="_csrf" value="<%= csrf %>">
+            <button class="btn danger">🗑 <%= t('delete') %></button>
+          </form>
+        <% } %>
+      </span>
+    </div>
+
+    <% if (item.locked) { %>
+      <p class="notice">This item is locked. Edits, bulk actions and import overwrite are all refused until it is unlocked.</p>
+    <% } %>
+
+    <% if (reasons.length) { %>
+      <div class="notice amber">
+        <strong>Needs review</strong>
+        <ul><% reasons.forEach(r => { %><li><%= r.detail %></li><% }) %></ul>
+      </div>
+    <% } %>
+
+    <% if (duplicates.length) { %>
+      <div class="notice warn">
+        <strong>Possible duplicate</strong>
+        <p><%= item.dup_reason %></p>
+        <p>
+          <% duplicates.forEach(d => { %>
+            <a href="/items/<%= encodeURIComponent(d.apparel_id) %>"><%= d.apparel_id %></a>
+          <% }) %>
+        </p>
+        <p class="muted">The dashboard only warns — it never merges two items. Deciding they are one garment is a human call.</p>
+        <form method="post" action="/items/<%= encodeURIComponent(item.apparel_id) %>/dismiss-duplicate" class="inline">
+          <input type="hidden" name="_csrf" value="<%= csrf %>">
+          <button class="btn small">These are different items</button>
+        </form>
+      </div>
+    <% } %>
+
+    <form method="post" action="/items/<%= encodeURIComponent(item.apparel_id) %>" class="edit">
+      <input type="hidden" name="_csrf" value="<%= csrf %>">
+      <div class="field-grid">
+        <% const selects = [['brand','brand'],['category','category'],['sub_category','sub_category'],['gender','gender'],['season','season'],['color','color'],['material','material'],['country','country']]; %>
+        <% selects.forEach(([name, key]) => { %>
+          <label><%= t(key) %>
+            <input list="list-<%= name %>" name="<%= name %>" value="<%= item[name] || '' %>" <%= item.locked ? 'disabled' : '' %>>
+            <datalist id="list-<%= name %>">
+              <% options[key].forEach(o => { %><option value="<%= o.value %>"><%= o.label %></option><% }) %>
+            </datalist>
+          </label>
+        <% }) %>
+        <label><%= t('size') %><input name="size" value="<%= item.size || '' %>" <%= item.locked ? 'disabled' : '' %>></label>
+        <label><%= t('original_price') %><input name="original_price" value="<%= item.original_price || '' %>" <%= item.locked ? 'disabled' : '' %>></label>
+        <label><%= t('netto') %><input name="netto" value="<%= item.netto || '' %>" <%= item.locked ? 'disabled' : '' %>></label>
+        <label><%= t('brutto') %><input name="brutto" value="<%= item.brutto || '' %>" <%= item.locked ? 'disabled' : '' %>></label>
+        <label><%= t('pieces') %><input name="pieces" type="number" min="1" value="<%= item.pieces %>" <%= item.locked ? 'disabled' : '' %>></label>
+        <label><%= t('package_code') %><input name="package_code" value="<%= item.package_code || '' %>" <%= item.locked ? 'disabled' : '' %>></label>
+        <label><%= t('article_no') %><input name="article_no" value="<%= item.article_no || '' %>" <%= item.locked ? 'disabled' : '' %>></label>
+        <label>Care information<input name="care_info" value="<%= item.care_info || '' %>" <%= item.locked ? 'disabled' : '' %>></label>
+      </div>
+
+      <fieldset class="commercial">
+        <legend>Commercial</legend>
+        <div class="field-grid">
+          <label><%= t('price') %>
+            <input name="user_decided_price" type="number" step="0.01" value="<%= item.user_decided_price === null ? '' : item.user_decided_price %>" <%= item.locked ? 'disabled' : '' %>>
+          </label>
+          <label><%= t('hs_code') %>
+            <input name="hs_code" id="hs-input" value="<%= item.hs_code || '' %>" autocomplete="off" <%= item.locked ? 'disabled' : '' %>>
+            <span class="muted small" id="hs-name"><%= hsName || '' %></span>
+            <div id="hs-results" class="picker" hidden></div>
+          </label>
+          <label class="wide"><%= t('notes') %><input name="notes" value="<%= item.notes || '' %>" <%= item.locked ? 'disabled' : '' %>></label>
+        </div>
+
+        <% if (item.suggested_price !== null) { %>
+          <p class="suggestion">
+            <strong>Suggested price <%= item.suggested_price %></strong> —
+            <%= item.suggested_price_basis %> (n=<%= item.suggested_price_n %>).
+            <button type="button" class="btn small" data-fill="user_decided_price" data-value="<%= item.suggested_price %>">Accept</button>
+          </p>
+        <% } %>
+        <p class="muted small">
+          Tag price <%= item.original_price || '—' %>.
+          <% if (priceCtx.n) { %>
+            Similar items decided between <%= priceCtx.min %> and <%= priceCtx.max %> across <%= priceCtx.n %> records.
+          <% } else { %>
+            No comparable priced items yet.
+          <% } %>
+        </p>
+
+        <% if (item.suggested_netto_g !== null) { %>
+          <p class="suggestion">
+            <strong>Suggested weight <%= item.suggested_netto_g %> g / <%= item.suggested_brutto_g %> g</strong> —
+            <%= item.weight_suggestion_basis %>.
+            <button type="button" class="btn small" data-fill="netto" data-value="<%= item.suggested_netto_g %>g">Accept netto</button>
+            <button type="button" class="btn small" data-fill="brutto" data-value="<%= item.suggested_brutto_g %>g">Accept brutto</button>
+          </p>
+        <% } %>
+        <% if (item.hs_code && item.hs_code_src !== 'MANUAL') { %>
+          <p class="suggestion">HS code suggested by <%= item.hs_code_src %> — <%= item.hs_code_basis %>. Confirm it by saving.</p>
+        <% } %>
+      </fieldset>
+
+      <% if (!item.locked) { %><button class="btn primary" type="submit"><%= t('save') %></button><% } %>
+    </form>
+  </div>
+
+  <aside class="card side">
+    <h2>Provenance</h2>
+    <dl class="kv">
+      <dt><%= t('operator') %></dt><dd><%= item.operator %></dd>
+      <dt><%= t('scanned_at') %></dt><dd><%= item.scanned_at.replace('T', ' ') %></dd>
+      <dt>Source</dt><dd><%= item.source %></dd>
+      <dt>Export batch</dt><dd><%= item.export_batch || '—' %></dd>
+      <% if (item.cloned_from) { %>
+        <dt>Cloned from</dt><dd><a href="/items/<%= encodeURIComponent(item.cloned_from) %>"><%= item.cloned_from %></a></dd>
+      <% } %>
+      <dt>Lowest confidence</dt><dd><%= item.min_confidence === null ? '—' : item.min_confidence.toFixed(2) %></dd>
+      <dt>Review state</dt><dd><%= item.review_state %></dd>
+    </dl>
+
+    <h3>Where each value came from</h3>
+    <table class="mini">
+      <% Object.entries(JSON.parse(item.field_src_json || '{}')).forEach(([field, src]) => { %>
+        <tr><td><%= field %></td><td class="<%= src === 'UNMATCHED' ? 'bad' : '' %>"><%= src %></td></tr>
+      <% }) %>
+    </table>
+
+    <h3>Photographs</h3>
+    <% if (item.catalog_image_url) { %>
+      <p>
+        Catalog: <a href="<%= item.catalog_image_url %>" target="_blank" rel="noopener"><%= item.catalog_image_url %></a><br>
+        <% if (item.rendering_status === 'COMPLETED') { %>
+          <span class="tag green">rendered</span>
+        <% } else { %>
+          <span class="tag amber">scheduled for tonight</span>
+          <span class="muted small">Catalog images render nightly at 20:00. The URL is permanent and valid from the moment the scan arrives.</span>
+        <% } %>
+      </p>
+    <% } %>
+    <% if (item.image_paths_json) { %>
+      <p class="muted small">Original photos on the server: <%= (JSON.parse(item.image_paths_json) || []).length %> file(s).</p>
+    <% } else { %>
+      <p class="muted small">Original photo paths are read from server_scans.db; none recorded yet for this item.</p>
+    <% } %>
+
+    <% if (groupSiblings.length) { %>
+      <h3>Article <%= item.article_no %></h3>
+      <form method="post" action="/items/<%= encodeURIComponent(item.apparel_id) %>/apply-preview">
+        <input type="hidden" name="_csrf" value="<%= csrf %>">
+        <p class="muted small">Copy chosen fields from this item to the other <%= groupSiblings.length %> in the group. You will see exactly what changes before it happens; locked rows are skipped.</p>
+        <div class="chips">
+          <% applicableFields.forEach(f => { %>
+            <label class="chip"><input type="checkbox" name="fields" value="<%= f %>"> <%= f %></label>
+          <% }) %>
+        </div>
+        <button class="btn">Preview apply to group</button>
+      </form>
+    <% } %>
+
+    <% if (prices.length) { %>
+      <h3>Price history</h3>
+      <table class="mini">
+        <% prices.forEach(p => { %>
+          <tr><td><%= new Date(p.set_at).toISOString().slice(0,16).replace('T',' ') %></td><td><%= p.price %> <%= p.currency %></td><td><%= p.set_by %></td></tr>
+        <% }) %>
+      </table>
+    <% } %>
+
+    <h3>Recent changes</h3>
+    <table class="mini">
+      <% history.slice(0, 12).forEach(h => { %>
+        <tr><td><%= new Date(h.at).toISOString().slice(0,16).replace('T',' ') %></td><td><%= h.action %></td><td><%= h.actor %></td></tr>
+      <% }) %>
+    </table>
+  </aside>
+</div>
+<%- include('partials/foot') %>
