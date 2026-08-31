@@ -2,7 +2,7 @@
 
 ## Project Completion check list
 
-(note: percents indicated weight of required work)
+(note: percents indicate weight of required work)
 
 ```
 [☑️] Primary Client Session to Review Problem and Operational Requirements.
@@ -13,7 +13,7 @@
 
 [🔃] _Main Project Components_
 
-    [🔃] _Android APP_
+    [🔃] _Android APP_ (Progress: 90%)
     
         [☑️] Proof of concept  (10%)
         
@@ -27,7 +27,7 @@
         
         [  ] End user stage debugging   (20%)
         
-    [🔃] Middleware
+    [🔃] _Middleware_ (Progress: 90%)
     
         [☑️] Proof of concept  (10%)
         
@@ -41,7 +41,7 @@
         
         [  ] End user stage debugging   (20%)
         
-    [  ] Analytical Dashboard
+    [🔃] _Analytical Dashboard_ (Progress: 30%)
     
         [☑️] Proof of concept  (10%)
         
