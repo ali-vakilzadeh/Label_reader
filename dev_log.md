@@ -13,7 +13,7 @@
 
 [🔃] _Main Project Components_
 
-    [>>] _Android APP_
+    [🔃] _Android APP_
     
         [☑️] Proof of concept  (10%)
         
@@ -21,23 +21,23 @@
         
         [☑️] Demo mode  (10%)
         
-        [↔️] Middleware connectivity + AI Vision test  (30%)
+        [☑️] Middleware connectivity + AI Vision test  (30%)
         
-        [  ] Developer stage debugging  (10%)
+        [🔃] Developer stage debugging  (10%)
         
         [  ] End user stage debugging   (20%)
         
     [🔃] Middleware
     
-        [🔃] Proof of concept  (10%)
+        [☑️] Proof of concept  (10%)
         
-        [🔃] prototype  (20%)
+        [☑️] prototype  (20%)
         
-        [🔃] Demo mode  (10%)
+        [☑️] Demo mode  (10%)
         
-        [  ] Middleware connectivity + AI Vision test  (30%)
+        [☑️] Middleware connectivity + AI Vision test  (30%)
         
-        [  ] Developer stage debugging  (10%)
+        [🔃] Developer stage debugging  (10%)
         
         [  ] End user stage debugging   (20%)
         
@@ -45,7 +45,7 @@
     
         [☑️] Proof of concept  (10%)
         
-        [  ] prototype  (20%)
+        [🔃] prototype  (20%)
         
         [  ] Demo mode  (10%)
         
@@ -109,3 +109,11 @@
 - Data tables connected to Mobile App and Middleware to fence AI variation
 - Final Integrity check of Mobile App and Middleware (Backend server)
 - Improved data consistency in failed cases
+
+## 2026-08-29,30
+
+- Installed backend server on trial server
+- Successfully tested Mobile app
+- App successfully connected to backend server and started data exchange
+- App offline functionality tested ok
+- Server cache and retry tested ok
