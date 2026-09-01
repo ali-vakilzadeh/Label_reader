@@ -1,5 +1,13 @@
 import React, { useRef, useState, useEffect } from 'react';
-import { Camera, Zap, ZapOff, Upload, Sparkles, RefreshCw } from 'lucide-react';
+import { Camera, Zap, ZapOff, Upload, Sparkles, RefreshCw, ScanBarcode } from 'lucide-react';
+import { getBarcodeScanner } from '../services/barcodeScanner';
+import type { BarcodeScanner, ScannerEngine } from '../services/barcodeScanner';
+
+/** Frames are downscaled to this width before decoding. */
+const SCAN_WIDTH = 1280;
+const SCAN_INTERVAL_MS = 250;
+/** The same tag decodes several times a second; ignore repeats for this long. */
+const REPEAT_SUPPRESS_MS = 2500;
 
 interface CameraViewfinderProps {
   onPhotoCaptured: (dataUrl: string) => void;
@@ -18,12 +26,16 @@ export const CameraViewfinder: React.FC<CameraViewfinderProps> = ({
   // Mirrors `stream` so the unmount cleanup sees the live value rather than the
   // null it closed over at mount, which left the camera running after navigation.
   const streamRef = useRef<MediaStream | null>(null);
+  const scanCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const scannerRef = useRef<BarcodeScanner | null>(null);
+  const lastBarcodeRef = useRef<{ value: string; at: number }>({ value: '', at: 0 });
 
   const [stream, setStream] = useState<MediaStream | null>(null);
   const [torchOn, setTorchOn] = useState(false);
   const [hasTorch, setHasTorch] = useState(false);
   const [cameraError, setCameraError] = useState<string | null>(null);
   const [isLive, setIsLive] = useState(false);
+  const [scannerEngine, setScannerEngine] = useState<ScannerEngine | 'loading'>('loading');
 
   // Start Camera Stream
   const startCamera = async () => {
@@ -92,46 +104,87 @@ export const CameraViewfinder: React.FC<CameraViewfinderProps> = ({
     };
   }, []);
 
-  // Continuous Barcode Detector loop if available
+  // Holds the latest callback so the scan loop is not torn down and rebuilt on
+  // every parent render, which is what the old `onBarcodeDetected` dependency did.
+  const onBarcodeDetectedRef = useRef(onBarcodeDetected);
   useEffect(() => {
-    if (!isLive || !videoRef.current || !onBarcodeDetected) return;
+    onBarcodeDetectedRef.current = onBarcodeDetected;
+  }, [onBarcodeDetected]);
+
+  // Resolve an engine once: native BarcodeDetector where it exists, ZXing WASM
+  // everywhere else (notably every browser on iOS).
+  useEffect(() => {
+    let cancelled = false;
+    getBarcodeScanner().then((handle) => {
+      if (cancelled) return;
+      scannerRef.current = handle.scanner;
+      setScannerEngine(handle.engine);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  /**
+   * Collapses the repeat hits from decoding the same tag ~4x a second, while
+   * still allowing the operator to re-scan the same code after a reset.
+   */
+  const emitBarcode = (value: string) => {
+    const now = Date.now();
+    const last = lastBarcodeRef.current;
+    if (last.value === value && now - last.at < REPEAT_SUPPRESS_MS) return;
+    lastBarcodeRef.current = { value, at: now };
+    navigator.vibrate?.(60);
+    onBarcodeDetectedRef.current?.(value);
+  };
+
+  // Continuous barcode scan loop
+  useEffect(() => {
+    if (!isLive) return;
 
     let isScanning = true;
-    const BarcodeDetectorClass = (window as unknown as { BarcodeDetector?: new (options?: { formats: string[] }) => { detect: (source: ImageBitmapSource) => Promise<Array<{ rawValue: string }>> } }).BarcodeDetector;
 
-    if (BarcodeDetectorClass) {
-      try {
-        const detector = new BarcodeDetectorClass({
-          formats: ['code_128', 'ean_13', 'ean_8', 'qr_code', 'upc_a', 'upc_e']
-        });
+    const scanLoop = async () => {
+      if (!isScanning) return;
+      const video = videoRef.current;
+      const scanner = scannerRef.current;
 
-        const scanLoop = async () => {
-          if (!isScanning || !videoRef.current || videoRef.current.readyState < 2) {
-            if (isScanning) requestAnimationFrame(scanLoop);
-            return;
-          }
-          try {
-            const barcodes = await detector.detect(videoRef.current);
-            if (barcodes && barcodes.length > 0 && barcodes[0].rawValue) {
-              onBarcodeDetected(barcodes[0].rawValue);
-            }
-          } catch {
-            // ignore frame parse errors
-          }
-          if (isScanning) {
-            setTimeout(scanLoop, 400);
-          }
-        };
-        scanLoop();
-      } catch (err) {
-        console.warn('BarcodeDetector initialization warning:', err);
+      // The engine may still be downloading; keep looping until it lands.
+      if (!scanner || !video || video.readyState < 2 || !video.videoWidth) {
+        if (isScanning) setTimeout(scanLoop, 300);
+        return;
       }
-    }
+
+      try {
+        // Decode a downscaled snapshot rather than the raw element. Handing the
+        // <video> straight to ZXing means re-reading a full 1080p frame every
+        // pass, which is far too slow on a phone; 1280px still resolves thin
+        // EAN bars while cutting the pixel work by more than half.
+        const frame = scanCanvasRef.current ?? (scanCanvasRef.current = document.createElement('canvas'));
+        const scale = Math.min(1, SCAN_WIDTH / video.videoWidth);
+        frame.width = Math.round(video.videoWidth * scale);
+        frame.height = Math.round(video.videoHeight * scale);
+
+        const ctx = frame.getContext('2d', { willReadFrequently: true });
+        if (ctx) {
+          ctx.drawImage(video, 0, 0, frame.width, frame.height);
+          const results = await scanner.detect(frame);
+          const value = results?.[0]?.rawValue?.trim();
+          if (value) emitBarcode(value);
+        }
+      } catch {
+        // A frame that does not decode is the normal case; keep scanning.
+      }
+
+      if (isScanning) setTimeout(scanLoop, SCAN_INTERVAL_MS);
+    };
+
+    scanLoop();
 
     return () => {
       isScanning = false;
     };
-  }, [isLive, onBarcodeDetected]);
+  }, [isLive]);
 
   // Toggle Torch
   const toggleTorch = async () => {
@@ -317,6 +370,28 @@ export const CameraViewfinder: React.FC<CameraViewfinderProps> = ({
             <RefreshCw className="w-4 h-4" />
             Enable Camera
           </button>
+        </div>
+      )}
+
+      {/* Scanner engine status — tells the operator whether live scanning is armed */}
+      {isLive && (
+        <div className="absolute top-2 left-2 z-20 flex items-center gap-1.5 px-2 py-1 rounded-lg bg-[#2A1D14]/80 backdrop-blur-sm">
+          <ScanBarcode
+            className={`w-3.5 h-3.5 ${
+              scannerEngine === 'unavailable'
+                ? 'text-red-400'
+                : scannerEngine === 'loading'
+                  ? 'text-[#BF9445] animate-pulse'
+                  : 'text-green-400'
+            }`}
+          />
+          <span className="text-[10px] font-bold uppercase tracking-wider text-[#E6D8C1]">
+            {scannerEngine === 'loading'
+              ? 'Scanner loading'
+              : scannerEngine === 'unavailable'
+                ? 'Scanner off'
+                : 'Scanning'}
+          </span>
         </div>
       )}
 

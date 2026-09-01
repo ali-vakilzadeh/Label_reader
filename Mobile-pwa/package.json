@@ -9,6 +9,7 @@
     "preview": "vite preview --host 0.0.0.0 --port 3000"
   },
   "dependencies": {
+    "barcode-detector": "^3.2.2",
     "dexie": "^4.0.11",
     "dexie-react-hooks": "^1.1.7",
     "lucide-react": "^1.16.0",
