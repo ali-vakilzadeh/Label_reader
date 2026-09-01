@@ -1,0 +1,8 @@
+{
+  "name": "Label reader PWA",
+  "description": "Enterprise apparel label extraction and daily ledger with Vision AI.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
