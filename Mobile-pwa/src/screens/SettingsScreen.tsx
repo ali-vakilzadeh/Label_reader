@@ -159,7 +159,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ showToast }) => 
             type="text"
             value={settings.serverUrl}
             onChange={(e) => handleChange('serverUrl', e.target.value)}
-            placeholder="http://localhost:3000"
+            placeholder="https://dev.outfit.am"
             className="w-full px-3.5 py-2.5 rounded-xl text-sm font-mono font-medium bg-[#FBF6EC] border border-[#E6D8C1] text-[#2A1D14] outline-none focus:border-[#86611F]"
           />
         </div>

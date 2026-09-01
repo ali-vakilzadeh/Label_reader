@@ -5,7 +5,7 @@ const SETTINGS_KEY = 'apparel_vision_enterprise_settings';
 const DEFAULT_SETTINGS: AppSettingsData = {
   userId: 'operator_01',
   devicePassword: 'enterprise2026',
-  serverUrl: 'http://localhost:3000',
+  serverUrl: 'https://dev.outfit.am',
   sessionToken: undefined,
   defaultStartDestination: 'review',
   autoSyncAiVision: true,
@@ -16,7 +16,7 @@ const DEFAULT_SETTINGS: AppSettingsData = {
 
 export function normalizeServerUrl(input: string): string {
   let url = (input || '').trim();
-  if (!url) return 'http://localhost:3000';
+  if (!url) return 'https://dev.outfit.am';
   if (!url.startsWith('http://') && !url.startsWith('https://')) {
     url = `http://${url}`;
   }

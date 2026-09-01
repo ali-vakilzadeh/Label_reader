@@ -15,6 +15,9 @@ export const CameraViewfinder: React.FC<CameraViewfinderProps> = ({
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  // Mirrors `stream` so the unmount cleanup sees the live value rather than the
+  // null it closed over at mount, which left the camera running after navigation.
+  const streamRef = useRef<MediaStream | null>(null);
 
   const [stream, setStream] = useState<MediaStream | null>(null);
   const [torchOn, setTorchOn] = useState(false);
@@ -26,8 +29,15 @@ export const CameraViewfinder: React.FC<CameraViewfinderProps> = ({
   const startCamera = async () => {
     setCameraError(null);
     try {
-      if (stream) {
-        stream.getTracks().forEach((t) => t.stop());
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach((t) => t.stop());
+        streamRef.current = null;
+      }
+
+      if (!navigator.mediaDevices?.getUserMedia) {
+        throw new Error(
+          'No camera API in this browser. The page must be served over HTTPS (or localhost) for the camera to be exposed.'
+        );
       }
 
       const mediaStream = await navigator.mediaDevices.getUserMedia({
@@ -39,12 +49,21 @@ export const CameraViewfinder: React.FC<CameraViewfinderProps> = ({
         audio: false
       });
 
+      streamRef.current = mediaStream;
       setStream(mediaStream);
-      if (videoRef.current) {
-        videoRef.current.srcObject = mediaStream;
-        await videoRef.current.play();
-        setIsLive(true);
+
+      const video = videoRef.current;
+      if (!video) {
+        throw new Error('Viewfinder element is not mounted.');
       }
+
+      video.srcObject = mediaStream;
+      // Safari can reject play() when it is not tied to a gesture. The stream is
+      // attached either way, so go live and let onCanPlay confirm the frames.
+      await video.play().catch((err) => {
+        console.warn('Autoplay blocked; waiting for canplay:', err);
+      });
+      setIsLive(true);
 
       // Check for torch capability
       const track = mediaStream.getVideoTracks()[0];
@@ -52,7 +71,13 @@ export const CameraViewfinder: React.FC<CameraViewfinderProps> = ({
       setHasTorch(!!capabilities?.torch);
     } catch (err) {
       console.warn('Camera access denied or unavailable:', err);
-      setCameraError('Camera access not granted or unavailable. You can upload photos from gallery or use the synthetic sample generator.');
+      const reason =
+        (err as Error).name === 'NotAllowedError'
+          ? 'Camera permission was denied for this site.'
+          : (err as Error).name === 'NotFoundError'
+            ? 'No camera device was found.'
+            : (err as Error).message || 'Camera unavailable.';
+      setCameraError(`${reason} You can upload photos from the gallery or use the synthetic sample generator.`);
       setIsLive(false);
     }
   };
@@ -60,8 +85,9 @@ export const CameraViewfinder: React.FC<CameraViewfinderProps> = ({
   useEffect(() => {
     startCamera();
     return () => {
-      if (stream) {
-        stream.getTracks().forEach((t) => t.stop());
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach((t) => t.stop());
+        streamRef.current = null;
       }
     };
   }, []);
@@ -265,16 +291,20 @@ export const CameraViewfinder: React.FC<CameraViewfinderProps> = ({
         className="hidden"
       />
 
-      {isLive ? (
-        <video
-          ref={videoRef}
-          playsInline
-          autoPlay
-          muted
-          className="w-full h-full object-cover"
-        />
-      ) : (
-        <div className="flex flex-col items-center justify-center p-6 text-center text-[#E6D8C1] gap-3">
+      {/* The video element stays mounted at all times. startCamera() needs
+          videoRef.current to attach the stream, so gating it on isLive would
+          deadlock: no video element -> no stream attached -> never live. */}
+      <video
+        ref={videoRef}
+        playsInline
+        autoPlay
+        muted
+        onCanPlay={() => setIsLive(true)}
+        className={`w-full h-full object-cover ${isLive ? '' : 'invisible'}`}
+      />
+
+      {!isLive && (
+        <div className="absolute inset-0 flex flex-col items-center justify-center p-6 text-center text-[#E6D8C1] gap-3">
           <Camera className="w-12 h-12 text-[#BF9445] opacity-80" />
           <div className="text-xs max-w-xs leading-relaxed opacity-90">
             {cameraError || 'Camera inactive. Click to initialize live viewfinder.'}
