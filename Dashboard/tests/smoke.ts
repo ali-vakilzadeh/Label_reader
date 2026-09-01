@@ -15,7 +15,11 @@ import path from 'node:path';
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'lr-dash-'));
 process.env.DASHBOARD_DATA_DIR = tmp;
-process.env.REFERENCE_DATA_DIR = path.resolve(__dirname, '../../middle_ware/reference_data');
+// The client's taxonomy tables belong to the middleware. In this repository that is a
+// sibling directory; on a server the two trees sit side by side under /opt with different
+// names, so a REFERENCE_DATA_DIR already in the environment always wins (setup.md §7).
+process.env.REFERENCE_DATA_DIR =
+  process.env.REFERENCE_DATA_DIR || path.resolve(__dirname, '../../middle_ware/reference_data');
 process.env.LOCAL_REFERENCE_DIR = path.resolve(__dirname, '../reference_data');
 process.env.MIDDLEWARE_DATA_DIR = path.join(tmp, 'no-middleware-here');
 

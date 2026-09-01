@@ -28,7 +28,7 @@ Read that before changing anything here; the section numbers in the code comment
 
 ```bash
 npm install
-cp .env.example .env        # then edit SESSION_SECRET at minimum
+cp .env.example .env        # defaults are fine locally; see setup.md before deploying
 npm run dev                 # tsx watch, http://localhost:3100
 ```
 
@@ -101,6 +101,10 @@ No engine calls an AI service. Vision belongs to the middleware; see plan §1 ov
 
 ## Deployment
 
+**Full step-by-step install: [`setup.md`](setup.md).** It assumes the middleware is already
+running per [`middle_ware/setup.md`](../middle_ware/setup.md) and installs the dashboard as a
+second service on the same box. What follows is the summary.
+
 The dashboard reads the client's taxonomy from the middleware's own `reference_data/`
 directory — one shared copy, so the English text the middleware matched against and the
 numeric id the dashboard exports can never drift apart.
@@ -112,13 +116,18 @@ Both processes need read **and write** on `control.db`, `server_scans.db`, `flyw
 so a read-only account cannot read a WAL database at all.
 
 ```bash
-sudo usermod -aG apparel-shared apparel-dashboard
+sudo groupadd -f apparel-shared
+sudo usermod -aG apparel-shared apparel            # middleware
+sudo usermod -aG apparel-shared apparel-dashboard  # dashboard
+sudo chgrp apparel-shared /opt/apparel-middleware/data /opt/apparel-middleware/data/*.db*
 sudo chmod 2770 /opt/apparel-middleware/data     # the leading 2 (setgid) is required
 sudo chmod 660  /opt/apparel-middleware/data/*.db*
 ```
 
 Without setgid, SQLite recreates `-wal`/`-shm` under the wrong group at the next checkpoint
-and locks the other process out — **hours after a deploy that looked fine**.
+and locks the other process out — **hours after a deploy that looked fine**. Setgid fixes the
+group of new files but not their mode, so both systemd units also need `UMask=0007`; see
+[`setup.md`](setup.md) §6.
 
 ### Backup
 
