@@ -99,9 +99,12 @@ async function main(): Promise<void> {
     check(`"${sample}" absent from the system instruction`, !SYSTEM_INSTRUCTION.includes(sample));
     check(`"${sample}" absent from the response schema`, !schemaText.includes(sample));
   }
+  // The ceiling guards against a long TABLE (295 sub-categories, 839 brands)
+  // leaking into the prompt, not against extraction rules — the material
+  // language/footwear rules are deliberate prose and cost a few hundred chars.
   check(
     'prompt stays small',
-    SYSTEM_INSTRUCTION.length < 1500,
+    SYSTEM_INSTRUCTION.length < 2600,
     `${SYSTEM_INSTRUCTION.length} chars`,
   );
   check('TAXONOMY_KEYS exposes only the four short enums',
@@ -114,6 +117,28 @@ async function main(): Promise<void> {
   }
   check('instruction tells the model to transcribe the reported fields',
     /EXACTLY what is printed/i.test(SYSTEM_INSTRUCTION));
+
+  // ------------------------------------------------------------------------
+  section('Material rules are stated to the model');
+  check('multilingual compositions collapse to English',
+    /ONCE in English/i.test(SYSTEM_INSTRUCTION));
+  check('the five-language cotton example is spelled out',
+    SYSTEM_INSTRUCTION.includes('100% Cotton') &&
+      SYSTEM_INSTRUCTION.includes('ALGODON'));
+  check('the schema repeats the English-only rule',
+    /ENGLISH ONLY/i.test(schemaText));
+  check('footwear without a printed composition is inferred, not left empty',
+    /SHOES:/.test(SYSTEM_INSTRUCTION) &&
+      /infer the material of the upper/i.test(SYSTEM_INSTRUCTION));
+  check('an inferred footwear material is capped below the flywheel threshold',
+    /confidence 0\.50 or lower/i.test(SYSTEM_INSTRUCTION));
+  // The single terms the shoe rule offers must survive the local matcher —
+  // "Leather + Sole: Rubber" would fuzzy-snap onto the wrong table entry.
+  for (const term of ['Leather', 'Faux leather', 'Suede', 'Textile',
+    'Synthetic material', 'Rubber', 'Mesh']) {
+    check(`suggested shoe material "${term}" is a real table entry`,
+      materialIndex.match(term) === term, materialIndex.match(term));
+  }
 
   // ------------------------------------------------------------------------
   section('Local selection replaces what Gemini reported');

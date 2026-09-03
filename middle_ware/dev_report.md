@@ -1772,7 +1772,41 @@ could never be told about a value the matcher didn't know. That was right at 14 
 and wrong at 295. `TAXONOMY_KEYS` now exposes only the constrained enums, and a smoke check
 asserts that no long-table entry appears in either the instruction or the response schema.
 
-### 24.2 When nothing matches
+### 24.2 `material` — the two departures from verbatim reporting
+
+`material` is a reported field, so the model transcribes what the label says. Two label
+realities make pure verbatim transcription wrong, and the system instruction states both
+(2026-09-04, client-reported gaps):
+
+**Multilingual compositions.** European care labels print one composition in five or six
+languages, e.g. `100% ALGODÓN / ALGODÃO / COTTON / COTON / COTONE`. Read verbatim that looks
+like five fibres totalling 500%. The prompt states that these are translations of the *same*
+fibre and that the composition is reported **once, in English** — the example above is exactly
+`100% Cotton` — and that a fibre printed only in a foreign language is to be translated into
+its standard English name. This is the one place the model is asked to translate; everything
+else on this side of the system works in canonical English (see
+[§24.6](#246-division-of-labour-with-the-dashboard)), and `exportService.translateMaterial()`
+can only reach the Armenian legal terms from English fibre names.
+
+**Footwear with no printed composition.** Shoes routinely carry no composition at all. Rather
+than return an empty `material`, the model infers the material of the upper from the visible
+construction and returns a **single** English term — `Leather`, `Faux leather`, `Suede`,
+`Textile`, `Synthetic material`, `Rubber`, `Mesh` — at **confidence ≤ 0.50**. That cap is the
+point: it is below `FLYWHEEL_CONFIDENCE_THRESHOLD` (0.85), so every inferred shoe material is
+routed into the training DB for operator review ([§5](#5-the-training-flywheel)) instead of
+passing as if it had been read. This is the only field allowed to be filled in without printed
+evidence, and it is explicitly disabled when a shoe label *does* print a composition.
+
+A single term is required rather than a phrase because the matcher snaps free text onto the
+material table: `Leather` and `Suede` land on themselves, while `Leather + Sole: Rubber` fuzzily
+snaps onto the unrelated table row `Leather + Sole: Textile`. `tests/taxonomySelection.ts`
+asserts that every term the prompt suggests is a real table entry that matches to itself.
+
+Note that the matcher drops the percentage from a single-fibre composition: `100% Cotton`
+normalises to the canonical key `Cotton`. Multi-fibre compositions (`80% Cotton 20% Polyester`)
+find no whole-string match and are kept as transcribed, then split per fibre at export.
+
+### 24.3 When nothing matches
 
 The matcher returns the transcription unchanged and logs at debug. It never forces a value onto
 the nearest table row — a wrong canonical key is worse than an unmatched one, because everything
@@ -1782,7 +1816,7 @@ Symmetrically, a constrained field that comes back off-list is **passed through 
 warn**, never silently rewritten. Quietly "correcting" the model would hide prompt drift, and the
 decision says these values are used as received.
 
-### 24.3 Measured latency at real table sizes
+### 24.4 Measured latency at real table sizes
 
 | Path | Per lookup |
 |---|---|
@@ -1794,7 +1828,7 @@ decision says these values are used as received.
 Worst case is unmatchable text against the largest table. Warehouse vocabulary repeats heavily
 within a shift, so nearly every real lookup is a cache hit.
 
-### 24.4 Where the data lives
+### 24.5 Where the data lives
 
 Source: the client's per-table CSVs, exported by hand from
 `docs/client_data/Translations-Cleaned.xlsx`. `docs/` is not published with the middleware, so the
@@ -1824,7 +1858,7 @@ free text and quietly fill the ledger with junk, which is worse than not startin
 
 Deployment must therefore ship `reference_data/`.
 
-### 24.5 Division of labour with the dashboard
+### 24.6 Division of labour with the dashboard
 
 | Concern | Middleware | Dashboard |
 |---|---|---|
@@ -1841,7 +1875,7 @@ Consequence: `src/services/exportService.ts`, `scripts/convertTranslations.ts` a
 the work can move to the dashboard rather than be rewritten. The 12 smoke checks that covered
 Armenian export were removed with them.
 
-### 24.6 Wire-contract impact — open
+### 24.7 Wire-contract impact — open
 
 The client tables changed the values the device receives:
 

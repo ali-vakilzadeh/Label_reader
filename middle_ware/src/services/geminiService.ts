@@ -222,7 +222,12 @@ function describe(error: unknown): string {
  *
  * REPORTED fields (brand_name, country_of_origin, sub_category, material) are
  * transcription tasks: the model reports what it can actually read on the label,
- * verbatim. Their reference tables run to hundreds of entries (295 sub-categories,
+ * verbatim. `material` carries the only two departures from verbatim reporting:
+ * a multilingual composition is collapsed to its single English wording (the same
+ * fibre printed in five languages is one fibre, not five), and footwear with no
+ * printed composition gets an inference from the visible construction, marked by
+ * a confidence of 0.50 or lower so the flywheel screen routes it for review.
+ * Their reference tables run to hundreds of entries (295 sub-categories,
  * 839 brands) and are NEVER sent to the model — listing them would bloat every
  * request, cost tokens on every scan, and push the model toward guessing a
  * plausible-looking option instead of reading the label. A local matcher maps the
@@ -240,6 +245,13 @@ export const SYSTEM_INSTRUCTION = [
   'brand_name, country_of_origin, sub_category (the garment type named on the',
   'label or clearly visible in the photo), and material (the fibre composition).',
   'If one of these is not legible, return an empty string rather than a guess.',
+  'MATERIAL LANGUAGE: labels repeat one composition in several languages, e.g.',
+  '"100% ALGODON / ALGODAO / COTTON / COTON / COTONE". Those are translations of',
+  'the SAME fibre, not extra fibres: report the composition ONCE in English and',
+  'drop the other languages — that example is exactly "100% Cotton". The fibres',
+  'you report must total 100%; never add translations together. Translate a fibre',
+  'named only in a foreign language into its English name (algodon/cotone ->',
+  'Cotton, laine/lana -> Wool, pelle/cuir -> Leather).',
   'Extract size and original_price as printed.',
   'Read weights from scale displays into an array.',
   'For the following fields choose exactly one option from the list given:',
@@ -251,6 +263,13 @@ export const SYSTEM_INSTRUCTION = [
   'RULE: Return a confidence score between 0.0 and 1.0 for EVERY field.',
   'If a field is missing, guess ONLY if confidence > 0.50.',
   'Otherwise return empty string with 0.0 confidence.',
+  'SHOES: if the item is footwear and no composition is printed anywhere, ignore',
+  'the two rules above and infer the material of the upper from the visible',
+  'construction, as a SINGLE English term ("Leather", "Faux leather", "Suede",',
+  '"Textile", "Synthetic material", "Rubber", "Mesh"), with no percentage and no',
+  'upper/sole wording, at confidence 0.50 or lower to mark it inferred. Footwear',
+  'material is the ONLY field that may be filled in without printed evidence;',
+  'when a shoe label does print a composition, transcribe it under the rule above.',
 ].join(' ');
 
 /** {value, confidence} leaf shared by every extracted field. */
@@ -278,7 +297,11 @@ export const EXTRACTION_SCHEMA: Schema = {
     size: confidenceField('Size as printed, e.g. "XL", "EU 42", "32W x 34L".'),
     color: confidenceField(`Dominant color, one of: ${TAXONOMY_KEYS.color}.`),
     material: confidenceField(
-      'Fibre composition exactly as printed, e.g. "80% Cotton 20% Polyester".',
+      'Fibre composition in ENGLISH ONLY, e.g. "80% Cotton 20% Polyester". ' +
+        'Multilingual labels repeat one composition in several languages: report ' +
+        'it once in English ("100% ALGODON / ALGODAO / COTTON / COTON / COTONE" ' +
+        'is "100% Cotton"). For footwear with no printed composition, give the ' +
+        'most likely material from the visible construction, with confidence <= 0.50.',
     ),
     original_price: confidenceField('Retail price including currency symbol.'),
     category: confidenceField(`One of: ${TAXONOMY_KEYS.category}.`),
@@ -342,7 +365,10 @@ export async function extractApparelData(
           {
             text:
               'Extract the structured apparel record from these images. ' +
-              'Report every visible scale reading in the weights array.',
+              'Report every visible scale reading in the weights array. ' +
+              'Give material in English only, collapsing any multilingual ' +
+              'composition into one English wording; for shoes with no printed ' +
+              'composition, infer the material from the construction.',
           },
         ],
       },
