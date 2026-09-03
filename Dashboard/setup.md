@@ -262,7 +262,26 @@ checkpoint. Without setgid the new files land under the creating process's prima
 lock the other process out at the next checkpoint — the delayed failure above.
 
 The dashboard also needs to traverse into that directory, which `2770` grants to the group,
-and to read `/opt/apparel-middleware/reference_data`, which is world-readable already.
+and to read `/opt/apparel-middleware/reference_data`. That one is **not** granted for free:
+`adduser --system --home /opt/apparel-middleware` creates the middleware's top directory
+`0750 apparel:apparel` on Ubuntu 24.04 (`DIR_MODE` in `/etc/adduser.conf`), and without the
+search bit for the shared group `apparel-dashboard` cannot reach anything below it, however
+readable the CSV files themselves are.
+
+To grant access to Dashboard:
+```bash
+chgrp apparel-shared /opt/apparel-middleware
+chmod 750            /opt/apparel-middleware          # g+rx for apparel-shared
+
+chgrp -R apparel-shared /opt/apparel-middleware/reference_data
+chmod 750            /opt/apparel-middleware/reference_data
+chmod 640            /opt/apparel-middleware/reference_data/*.csv
+
+check the file is existing and accessible:
+
+ls -ld /opt/apparel-middleware /opt/apparel-middleware/reference_data
+sudo -u apparel-dashboard test -r /opt/apparel-middleware/reference_data/brand.csv && echo READABLE
+```
 
 ### 6.3 One line in the middleware's unit
 
@@ -616,7 +635,8 @@ journalctl -u apparel-dashboard -n 50 --no-pager
 
 | Message | Cause | Fix |
 |---|---|---|
-| `Reference table missing: ...` | `reference_data/` not deployed, or `REFERENCE_DATA_DIR` wrong | Step 4 and §5. All eight tables are required at boot, by design |
+| `Reference table <name>: ... is not there` | `reference_data/` not deployed, or the path in `.env` is wrong — the message names which of `REFERENCE_DATA_DIR` / `LOCAL_REFERENCE_DIR` it came from, and the first directory on it that does not exist | Step 4 and §5. All eight tables are required at boot, by design |
+| `Reference table <name>: ... exists but this process may not read it` | A permissions problem, not a missing file — usually the search bit on a parent directory | §6.2. Confirm with `namei -l <the path in the message>` and `sudo -u apparel-dashboard test -r <path>` |
 | `Cannot find module` / a missing `.ejs` template | `src/` was pruned after the build | Re-run step 4; templates are served from `src/`, not `dist/` |
 | `EADDRINUSE` | Port 3100 taken | `ss -tlnp \| grep 3100` |
 | `Could not locate the bindings file` | `better-sqlite3` built on a different Node | `npm rebuild better-sqlite3` |

@@ -71,13 +71,75 @@ function pickColumn(headers: string[], needle: string): string | null {
   return hit ?? null;
 }
 
+interface Unreadable {
+  /** `absent` = something on the path is not there. `denied` = it is there and we cannot get at it. */
+  kind: 'absent' | 'denied' | 'error';
+  /** A sentence completing "<file> …", naming the component that actually blocks. */
+  detail: string;
+}
+
+/**
+ * Why a file cannot be read — or null when it can.
+ *
+ * `fs.existsSync` answers `false` for a file that is present but unreachable: EACCES on the
+ * file itself, or a missing search bit on any directory above it. Every one of those cases
+ * used to be reported as a missing table, which sends whoever reads the message looking for
+ * the wrong thing — a redeploy instead of a `chmod`, or a `chmod` instead of a typo in
+ * `.env`. Walking the path root-first names the component that blocks, so the three are
+ * told apart at the point of failure. See setup.md §15.
+ */
+function whyUnreadable(file: string): Unreadable | null {
+  const target = path.resolve(file);
+
+  const chain: string[] = [];
+  for (let p = target; ; p = path.dirname(p)) {
+    chain.unshift(p);
+    if (path.dirname(p) === p) break;
+  }
+
+  for (const p of chain) {
+    const leaf = p === target;
+    try {
+      // A directory needs only its search bit to be traversed; the leaf needs read.
+      fs.accessSync(p, leaf ? fs.constants.R_OK : fs.constants.X_OK);
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code ?? 'EACCES';
+      if (code === 'ENOENT' || code === 'ENOTDIR') {
+        return {
+          kind: 'absent',
+          detail: leaf
+            ? 'is not there'
+            : `is not there — the directory ${p} does not exist, so check the configured path for a typo`,
+        };
+      }
+      if (code === 'EACCES' || code === 'EPERM') {
+        const who =
+          process.getuid && process.getgid
+            ? `this process (uid ${process.getuid()}, gid ${process.getgid()})`
+            : 'this process';
+        return {
+          kind: 'denied',
+          detail: leaf
+            ? `exists but ${who} may not read it — a permissions problem, not a missing file (setup.md §6.2)`
+            : `exists but ${who} may not traverse ${p} — a permissions problem, not a missing file (setup.md §6.2)`,
+        };
+      }
+      return { kind: 'error', detail: `could not be opened: ${code} at ${p}` };
+    }
+  }
+  return null;
+}
+
 function loadTable(key: TaxonomyKey): RefTable {
   const src = SOURCES[key];
   const dir = src.local ? config.localReferenceDir : config.referenceDataDir;
+  const envVar = src.local ? 'LOCAL_REFERENCE_DIR' : 'REFERENCE_DATA_DIR';
   const file = path.join(dir, src.file);
-  if (!fs.existsSync(file)) {
+  const problem = whyUnreadable(file);
+  if (problem) {
     throw new Error(
-      `Reference table missing: ${file}. The dashboard cannot start without the client's taxonomy tables.`,
+      `Reference table ${key}: ${file} ${problem.detail}. That path comes from ${envVar} ` +
+        `in .env. The dashboard cannot start without the client's taxonomy tables.`,
     );
   }
 
@@ -168,8 +230,9 @@ let customsFuse: Fuse<CustomsCode> | null = null;
 
 export function loadCustomsCodes(): CustomsCode[] {
   const file = path.join(config.localReferenceDir, 'custom_codes.csv');
-  if (!fs.existsSync(file)) {
-    console.warn(`[reference] ${file} missing — the HS code picker will be empty.`);
+  const problem = whyUnreadable(file);
+  if (problem) {
+    console.warn(`[reference] custom_codes.csv ${problem.detail} (${file}) — the HS code picker will be empty.`);
     customsCodes = [];
   } else {
     customsCodes = readCsv(file)
@@ -240,7 +303,13 @@ let hsRules: HsRule[] | null = null;
 
 export function loadHsRules(): HsRule[] {
   const file = path.join(config.localReferenceDir, 'hs_map.csv');
-  if (!fs.existsSync(file)) {
+  const problem = whyUnreadable(file);
+  if (problem) {
+    // Absent is by design — the table ships empty and the rule tier stays dormant. Present
+    // but unreadable is not, and would otherwise look identical from the UI.
+    if (problem.kind !== 'absent') {
+      console.warn(`[reference] hs_map.csv ${problem.detail} (${file}) — the rule tier stays dormant.`);
+    }
     hsRules = [];
     return hsRules;
   }
