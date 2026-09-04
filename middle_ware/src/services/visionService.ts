@@ -22,12 +22,14 @@ import {
   persistImages,
   readImageAsInline,
 } from './storageService';
-import { CONSTRAINED_FIELDS, MATCHED_FIELDS } from '../utils/fuzzyMatcher';
+import { CONSTRAINED_FIELDS, MATCHED_FIELDS, normalizeComposition } from '../utils/fuzzyMatcher';
+import { buildArmenianData } from './armenianService';
 import { clampConfidence, resolveWeights } from '../utils/weights';
 import { logger } from '../utils/logger';
 import { ApiError } from '../middleware/errorHandler';
 import {
   EXTRACTED_FIELDS,
+  type ArmenianData,
   type ConfidenceField,
   type ExtractedData,
   type ExtractedFieldName,
@@ -47,6 +49,35 @@ export interface ExtractRequest {
 }
 
 const EMPTY_FIELD: ConfidenceField = { value: '', confidence: 0 };
+
+/**
+ * Ceiling on `care_info` confidence.
+ *
+ * Gemini is not a QR decoder. It reads QR content with real but imperfect
+ * reliability, and a misread URL is the one extraction error nobody can catch by
+ * eye — `https://care.example.com/x7f9` and `https://care.example.com/x7f8` look
+ * equally correct on a review screen, unlike a misread brand name.
+ *
+ * So the value is reported but its confidence is capped below
+ * `FLYWHEEL_CONFIDENCE_THRESHOLD`, which routes every scan carrying a QR read
+ * into the training DB for operator review. This is the same treatment the
+ * inferred footwear material gets, and for the same reason: a value produced by
+ * judgement rather than by reading must not present itself as read.
+ *
+ * The cap tracks the live threshold rather than sitting at a fixed 0.60, so
+ * lowering `FLYWHEEL_CONFIDENCE_THRESHOLD` cannot quietly switch the review off.
+ * At the default threshold of 0.85 the ceiling is 0.60, which is the value
+ * api_contract.md v1.4 §8.4 shows.
+ */
+const CARE_INFO_CEILING = 0.6;
+
+export function careInfoConfidence(
+  reported: number,
+  threshold = env.flywheelConfidenceThreshold,
+): number {
+  const ceiling = Math.min(CARE_INFO_CEILING, Math.max(0, threshold - 0.01));
+  return Math.min(clampConfidence(reported), ceiling);
+}
 
 /**
  * Normalises one Gemini payload into the locked API shape:
@@ -81,6 +112,22 @@ export function normalizeExtraction(raw: GeminiRawExtraction): ExtractedData {
       continue;
     }
 
+    // `material` is the one reported field whose value is a composition rather
+    // than a term, so it is matched per fibre segment and keeps its percentages
+    // (api_contract.md v1.4 §8.1). Snapping the whole string used to return the
+    // bare key `Cotton` for `100% Cotton`.
+    if (field === 'material') {
+      data.material = { value: normalizeComposition(value).value, confidence };
+      continue;
+    }
+
+    // A QR read cannot be checked by eye, so its confidence is capped into the
+    // review band whatever the model claims. See CARE_INFO_CEILING.
+    if (field === 'care_info') {
+      data.care_info = { value, confidence: careInfoConfidence(confidence) };
+      continue;
+    }
+
     // REPORTED fields: Gemini transcribed what it saw, and the local matcher
     // replaces that free text with the closest entry from the reference table.
     const index = MATCHED_FIELDS[field as keyof typeof MATCHED_FIELDS];
@@ -108,6 +155,24 @@ export function normalizeExtraction(raw: GeminiRawExtraction): ExtractedData {
   }
 
   return data;
+}
+
+/**
+ * Reads the model's main-photo suggestion, or null when it could not choose.
+ *
+ * `null` is deliberately not `0`. A confident wrong pre-selection costs the
+ * operator a correction they may not notice; an absent one costs them the tap
+ * they were already making. The schema cannot express null, so the model
+ * returns -1 and that lands here.
+ */
+export function readSuggestedKeyPhoto(
+  raw: Pick<GeminiRawExtraction, 'key_photo_index'>,
+  imageCount: number,
+): number | null {
+  const index = raw.key_photo_index;
+  if (typeof index !== 'number' || !Number.isInteger(index)) return null;
+  if (index < 0 || index >= imageCount) return null;
+  return index;
 }
 
 /** Fresh, all-empty payload used when a field set cannot be produced. */
@@ -160,6 +225,10 @@ export function cloneFromParent(request: ExtractRequest): VisionExtractResponse 
     rendering_status: 'PENDING',
     // A clone inherits a finished extraction; nothing is owed to the queue.
     extraction_status: 'COMPLETED',
+    // ...and inherits the suggestion with it. The clone shares the parent's
+    // photos, so the parent's answer is the answer for this batch too, and the
+    // model is never called to re-derive it.
+    suggested_key_photo_index: parent.suggested_key_photo_index ?? null,
   });
 
   logger.info(`Cloned ${parentId} -> ${request.apparelId} (Gemini bypassed)`);
@@ -172,6 +241,7 @@ export function cloneFromParent(request: ExtractRequest): VisionExtractResponse 
     catalogUrl,
     processingStatus: 'READY_TO_CONFIRM',
     data,
+    suggestedKeyPhotoIndex: parent.suggested_key_photo_index ?? null,
   });
 }
 
@@ -198,14 +268,23 @@ export async function runExtraction(
   files?: Express.Multer.File[],
 ): Promise<ExtractionOutcome> {
   // Prefer the in-memory upload; fall back to the copies on disk when draining.
-  const images = files?.length
-    ? files.map((file) => ({
+  const fromDisk = files?.length
+    ? null
+    : imagePaths.map((imagePath) => readImageAsInline(imagePath));
+
+  const images = fromDisk
+    ? fromDisk.filter((image): image is { mimeType: string; data: string } => image !== null)
+    : files!.map((file) => ({
         mimeType: file.mimetype,
         data: file.buffer.toString('base64'),
-      }))
-    : imagePaths
-        .map((imagePath) => readImageAsInline(imagePath))
-        .filter((image): image is { mimeType: string; data: string } => image !== null);
+      }));
+
+  // When a drain skips an unreadable photo the array compacts, so the model's
+  // numbering no longer lines up with the operator's `key_photo_index`. The
+  // extraction is still worth doing on what survived; the suggestion is not,
+  // because it would silently point at a different photo than the one the model
+  // meant. Dropping it is the honest outcome — see readSuggestedKeyPhoto.
+  const numberingIntact = !fromDisk || fromDisk.every((image) => image !== null);
 
   if (images.length === 0) {
     // Photos are gone from disk — this scan can never be extracted automatically.
@@ -231,7 +310,11 @@ export async function runExtraction(
   try {
     const raw = await extractApparelData(images);
     const data = normalizeExtraction(raw);
-    completeExtraction(apparelId, JSON.stringify(data));
+    // Persisted with the extraction, not recomputed: GET /vision/result/:id
+    // replays this long afterwards, and re-deriving it would mean calling the
+    // model again on a scan that is already finished.
+    const suggested = numberingIntact ? readSuggestedKeyPhoto(raw, images.length) : null;
+    completeExtraction(apparelId, JSON.stringify(data), suggested);
     reportVisionSuccess();
     return { ok: true, data, raw };
   } catch (error) {
@@ -339,12 +422,19 @@ interface ResponseParts {
   processingStatus: ProcessingStatus;
   data: ExtractedData | null;
   attentionReason?: string | null;
+  suggestedKeyPhotoIndex?: number | null;
 }
 
-/** Single place the v1.1 response shape is assembled. */
+/** Single place the v1.4 response shape is assembled. */
 export function buildScanResponse(parts: ResponseParts): VisionExtractResponse {
   const snapshot = queueSnapshot();
   const terminal = parts.processingStatus !== 'PENDING_AI';
+
+  // `data_hy` is present exactly when `data` is — one object, one rendering.
+  // Deriving it here rather than at each call site is what guarantees that:
+  // there is no path that can return English without its Armenian, or Armenian
+  // for a scan that has no data yet.
+  const armenian: ArmenianData | null = parts.data ? buildArmenianData(parts.data) : null;
 
   return {
     status: 'success',
@@ -359,7 +449,9 @@ export function buildScanResponse(parts: ResponseParts): VisionExtractResponse {
     retry_after_seconds: terminal ? env.pollRetryMinSeconds : snapshot.retryAfterSeconds,
     blocking_fault: terminal ? null : snapshot.blockingFault,
     attention_reason: parts.attentionReason ?? null,
+    suggested_key_photo_index: parts.suggestedKeyPhotoIndex ?? null,
     data: parts.data,
+    data_hy: armenian,
   };
 }
 
@@ -383,6 +475,7 @@ export function responseForScan(scan: ServerScanRow): VisionExtractResponse {
         processingStatus: 'NEEDS_ATTENTION',
         data: null,
         attentionReason: 'Stored extraction could not be read.',
+        suggestedKeyPhotoIndex: null,
       });
     }
   }
@@ -394,6 +487,9 @@ export function responseForScan(scan: ServerScanRow): VisionExtractResponse {
     catalogUrl: scan.catalog_image_url,
     processingStatus,
     data,
+    // Replayed from the row, not recomputed. A result fetched days later must
+    // pre-select the same photo the operator saw at capture time.
+    suggestedKeyPhotoIndex: scan.suggested_key_photo_index ?? null,
     attentionReason:
       processingStatus === 'NEEDS_ATTENTION'
         ? (scan.extraction_error ?? 'This scan could not be extracted automatically.')
@@ -473,6 +569,8 @@ export function acceptScan(request: ExtractRequest): VisionExtractResponse {
     catalogUrl,
     processingStatus: 'PENDING_AI',
     data: null,
+    // Nothing has looked at the photos yet.
+    suggestedKeyPhotoIndex: null,
   });
 }
 

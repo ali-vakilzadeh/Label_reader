@@ -14,6 +14,7 @@ import {
   enforceRingBuffer,
 } from '../src/db/flywheelDb';
 import { normalizeExtraction } from '../src/services/visionService';
+import { referenceEntries } from '../src/data/referenceTables';
 import { screenConfidence } from '../src/services/flywheelService';
 import { resolveWeights } from '../src/utils/weights';
 import { buildSystemInstruction, buildExtractionSchema } from '../src/services/geminiService';
@@ -61,6 +62,9 @@ function sampleGemini(overrides: { genderConf?: number } = {}): GeminiRawExtract
     sub_category: cf('Trousers', 0.87),
     gender: cf('unisex', overrides.genderConf ?? 0.9),
     season: cf('all-seasons', 0.88),
+    // No care QR code on this garment — the ordinary case.
+    care_info: cf('', 0),
+    key_photo_index: 0,
     weights: [cf('290g', 0.86), cf('240g', 0.86)],
   };
 }
@@ -187,9 +191,37 @@ async function main(): Promise<void> {
     cloneBody.data,
   );
   check(
-    'all 12 contract fields present',
-    Object.keys(cloneBody.data ?? {}).length === 12,
+    'all 13 contract fields present',
+    Object.keys(cloneBody.data ?? {}).length === 13,
     Object.keys(cloneBody.data ?? {}),
+  );
+  check(
+    'care_info is one of them',
+    cloneBody.data?.care_info !== undefined,
+    Object.keys(cloneBody.data ?? {}),
+  );
+  // v1.4 §4.2: data_hy is present exactly when data is, and carries the same
+  // 13 keys — including on the clone path, which never calls the model.
+  check(
+    'clone carries data_hy with the same 13 keys',
+    cloneBody.data_hy !== null &&
+      Object.keys(cloneBody.data_hy ?? {}).length === 13 &&
+      Object.keys(cloneBody.data ?? {}).every((k) => k in (cloneBody.data_hy ?? {})),
+    cloneBody.data_hy,
+  );
+  // The exact word comes from the client's own sub-category.csv, so the check is
+  // "it is the Armenian the table publishes", not a string frozen into a test.
+  check(
+    'data_hy renders the sub_category in Armenian, from the reference table',
+    /[԰-֏]/.test(cloneBody.data_hy?.sub_category ?? '') &&
+      cloneBody.data_hy?.sub_category ===
+        referenceEntries('sub_category').find((e) => e.en === 'Trousers')?.hy,
+    cloneBody.data_hy?.sub_category,
+  );
+  check(
+    'brand and country are null in data_hy by design',
+    cloneBody.data_hy?.brand_name === null && cloneBody.data_hy?.country_of_origin === null,
+    cloneBody.data_hy,
   );
 
   const orphan = await fetch(`${base}/api/v1/vision/extract`, {

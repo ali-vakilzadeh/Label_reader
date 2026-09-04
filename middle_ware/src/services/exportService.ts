@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { env } from '../config/env';
+import { joinComposition, splitComposition } from '../utils/composition';
 import { logger } from '../utils/logger';
 import { EXTRACTED_FIELDS, type ExtractedData, type ExtractedFieldName } from '../types';
 
@@ -75,39 +76,23 @@ export function toArmenian(term: string): string | null {
  * exact map lookup would always miss. Each fibre segment is translated
  * individually with its percentage preserved; a fibre with no legal Armenian
  * term is left in English and reported through `missing`.
+ *
+ * The segmentation itself lives in `utils/composition.ts` and is shared with the
+ * English normalisation and with `data_hy` — one parser, three lookups. This
+ * function is the customs-paperwork lookup; `armenianService` is the on-screen
+ * one, and the two maps are deliberately never mixed.
  */
 export function translateMaterial(
   composition: string,
 ): { text: string; missing: string[] } {
-  const missing: string[] = [];
   const trimmed = composition.trim();
-  if (!trimmed) return { text: '', missing };
+  if (!trimmed) return { text: '', missing: [] };
 
   // Whole-string hit first ("cotton", "faux leather").
   const whole = toArmenian(trimmed);
-  if (whole) return { text: whole, missing };
+  if (whole) return { text: whole, missing: [] };
 
-  // Split on separators, and before each "NN%" token so run-on compositions
-  // ("38% Cotton 27% Wool") break into one segment per fibre.
-  const segments = trimmed
-    .split(/[,;/]+|\s+(?=\d+(?:[.,]\d+)?\s*%)/)
-    .map((segment) => segment.trim())
-    .filter(Boolean);
-
-  const translated = segments.map((segment) => {
-    const match = segment.match(/^(\d+(?:[.,]\d+)?\s*%)?\s*(.+?)\s*(\d+(?:[.,]\d+)?\s*%)?$/);
-    const percentage = (match?.[1] ?? match?.[3] ?? '').trim();
-    const fibre = (match?.[2] ?? segment).trim();
-
-    const armenian = toArmenian(fibre);
-    if (!armenian) {
-      missing.push(fibre);
-      return segment;
-    }
-    return percentage ? `${percentage} ${armenian}` : armenian;
-  });
-
-  return { text: translated.join(', '), missing };
+  return joinComposition(splitComposition(trimmed), (fibre) => toArmenian(fibre));
 }
 
 /** Fields carrying controlled vocabulary — the only ones worth translating. */

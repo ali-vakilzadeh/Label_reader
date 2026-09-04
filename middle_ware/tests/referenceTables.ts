@@ -146,6 +146,8 @@ async function main(): Promise<void> {
       sub_category: { value: 'Trousers', confidence: 0.9 },
       gender: { value: 'Men', confidence: 0.9 },
       season: { value: 'Summer', confidence: 0.9 },
+      care_info: { value: '', confidence: 0 },
+      key_photo_index: 0,
       weights: [{ value: '240g', confidence: 0.8 }],
     });
     const armenianInData = Object.values(extracted).some((field) =>
@@ -228,7 +230,7 @@ async function main(): Promise<void> {
 
       const health = await fetch(`${base}/health`);
       const healthBody = (await health.json()) as Record<string, unknown>;
-      check('health advertises api_contract 1.3', healthBody.api_contract === '1.3', healthBody);
+      check('health advertises api_contract 1.4', healthBody.api_contract === '1.4', healthBody);
       check('health advertises the reference version',
         healthBody.reference_version === referenceVersion(), healthBody);
     } finally {

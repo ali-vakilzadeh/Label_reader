@@ -2,7 +2,9 @@
  * The two-mode taxonomy design, and the matcher at real client table sizes.
  *
  *   REPORTED    sub_category, brand_name, country_of_origin, material
- *               -> never in the prompt; Gemini transcribes, matcher selects
+ *               -> never in the prompt; Gemini transcribes, matcher selects.
+ *                  `material` is matched per fibre segment, not whole-string
+ *                  (v1.4) - see the composition section below
  *   CONSTRAINED category, color, gender, season
  *               -> listed in the prompt; value used exactly as returned
  *
@@ -50,7 +52,11 @@ async function main(): Promise<void> {
   );
   const SYSTEM_INSTRUCTION = buildSystemInstruction();
   const EXTRACTION_SCHEMA = buildExtractionSchema();
-  const { normalizeExtraction } = await import('../src/services/visionService');
+  const { normalizeExtraction, readSuggestedKeyPhoto, emptyExtraction } = await import(
+    '../src/services/visionService'
+  );
+  const { referenceEntries } = await import('../src/data/referenceTables');
+  const emptyExtractionForTest = () => emptyExtraction();
 
   // ------------------------------------------------------------------------
   section('Tables come from the committed CSVs, not a second copy');
@@ -104,11 +110,13 @@ async function main(): Promise<void> {
     check(`"${sample}" absent from the response schema`, !schemaText.includes(sample));
   }
   // The ceiling guards against a long TABLE (295 sub-categories, 839 brands)
-  // leaking into the prompt, not against extraction rules — the material
-  // language/footwear rules are deliberate prose and cost a few hundred chars.
+  // leaking into the prompt, not against extraction rules - the material,
+  // size, care-QR and key-photo rules are deliberate prose and cost a few
+  // hundred chars each. Raised from 2600 for v1.4; a jump past this means a
+  // table leaked, because prose does not arrive 1,000 characters at a time.
   check(
     'prompt stays small',
-    SYSTEM_INSTRUCTION.length < 2600,
+    SYSTEM_INSTRUCTION.length < 3800,
     `${SYSTEM_INSTRUCTION.length} chars`,
   );
   check('TAXONOMY_KEYS exposes only the four short enums',
@@ -144,6 +152,50 @@ async function main(): Promise<void> {
       materialIndex.match(term) === term, materialIndex.match(term));
   }
 
+  section('The v1.4 size rule is stated to the model');
+  check('the model is told to report the European size only',
+    /report ONLY the European one/i.test(SYSTEM_INSTRUCTION));
+  check('EUR is normalised to EU, with the worked example',
+    SYSTEM_INSTRUCTION.includes('EUR 122/128') && SYSTEM_INSTRUCTION.includes('EU 122/128'));
+  check('the value after the prefix is copied verbatim',
+    /never simplify, split or convert/i.test(SYSTEM_INSTRUCTION));
+  // The fallback matters as much as the rule: without it every adult garment
+  // with a plain letter size breaks.
+  check('a label with no European size is reported as printed',
+    /NO European size/i.test(SYSTEM_INSTRUCTION) &&
+      /add no prefix/i.test(SYSTEM_INSTRUCTION));
+  check('the rule chooses between systems, it does not invent one',
+    /never invent one it does not/i.test(SYSTEM_INSTRUCTION));
+  check('the schema repeats the EU-only rule',
+    /EUROPEAN size only/i.test(schemaText) && /no prefix added/i.test(schemaText));
+
+  section('care_info is asked for, and asked for carefully');
+  check('care_info is in the response schema',
+    /care_info/.test(schemaText));
+  check('the model is told to decode the care QR code',
+    /CARE QR CODE:/.test(SYSTEM_INSTRUCTION));
+  check('the URL is returned alone, not in a sentence',
+    /Return the URL only/i.test(SYSTEM_INSTRUCTION));
+  check('an unreadable QR code returns empty at 0.0, not a guess',
+    /empty string/i.test(SYSTEM_INSTRUCTION) &&
+      /cannot be spotted by eye/i.test(SYSTEM_INSTRUCTION));
+
+  section('The key-photo suggestion is asked for, and may be declined');
+  check('key_photo_index is in the response schema',
+    /key_photo_index/.test(schemaText));
+  check('the model is told the images are numbered from 0',
+    /numbered from 0/i.test(SYSTEM_INSTRUCTION));
+  check('a label, tag or scale display is not the product shot',
+    /not a care label/i.test(SYSTEM_INSTRUCTION));
+  // A wrong confident answer is worse than an honest absence.
+  check('the model may refuse rather than fall back to photo 0',
+    /return\s*\n?\s*-1/.test(SYSTEM_INSTRUCTION) || /return -1/i.test(SYSTEM_INSTRUCTION));
+  check('and -1 is read back as null, not as photo 0',
+    readSuggestedKeyPhoto({ key_photo_index: -1 }, 4) === null);
+  check('an in-range suggestion is kept', readSuggestedKeyPhoto({ key_photo_index: 2 }, 4) === 2);
+  check('an out-of-range suggestion is discarded, not clamped',
+    readSuggestedKeyPhoto({ key_photo_index: 9 }, 4) === null);
+
   // ------------------------------------------------------------------------
   section('Local selection replaces what Gemini reported');
   const cases: Array<[string, { match(v: string): string | null }, string]> = [
@@ -161,6 +213,70 @@ async function main(): Promise<void> {
   for (const [input, index, expected] of cases) {
     const got = index.match(input);
     check(`"${input}" -> ${expected}`, got === expected, got);
+  }
+
+  // ------------------------------------------------------------------------
+  section('material: the full composition survives, with invariant fibre names');
+  const { normalizeComposition } = await import('../src/utils/fuzzyMatcher');
+  const composition = (input: string) => normalizeComposition(input).value;
+
+  // The v1.3 defect: the whole string snapped onto the table and the
+  // percentage was thrown away. This is the check that must never regress.
+  check('"100% Cotton" keeps its percentage',
+    composition('100% Cotton') === '100% Cotton', composition('100% Cotton'));
+  check('a multi-fibre composition survives intact',
+    composition('80% Cotton 20% Polyester') === '80% Cotton 20% Polyester',
+    composition('80% Cotton 20% Polyester'));
+  check('three fibres survive, in the printed order and spacing',
+    composition('40% Cotton 40% Nylon 20% Elastane') === '40% Cotton 40% Nylon 20% Elastane',
+    composition('40% Cotton 40% Nylon 20% Elastane'));
+  check('comma-separated compositions keep their commas',
+    composition('60% Wool, 40% Polyamide') === '60% Wool, 40% Polyamide',
+    composition('60% Wool, 40% Polyamide'));
+
+  // Invariance is the point: the same fibre must always arrive spelled the same
+  // way, or the value stops being groupable on the paperwork.
+  check('a foreign fibre name normalises to its canonical English term',
+    composition('80% COTONE 20% POLIESTER') === '80% Cotton 20% Polyester',
+    composition('80% COTONE 20% POLIESTER'));
+  check('casing is normalised without touching the percentage',
+    composition('100% cotton') === '100% Cotton', composition('100% cotton'));
+
+  // A wrong canonical key is worse than an unmatched one - everywhere.
+  check('an unknown fibre passes through exactly as transcribed',
+    composition('70% Cotton 30% Unobtanium') === '70% Cotton 30% Unobtanium',
+    composition('70% Cotton 30% Unobtanium'));
+  check('a composition of nothing but unknown fibres is untouched',
+    composition('100% Unobtanium') === '100% Unobtanium', composition('100% Unobtanium'));
+
+  // The footwear inference is a single term with no percentage; it must still
+  // land on itself rather than being mangled by the segmenter.
+  check('a single-term shoe inference lands on itself',
+    composition('Leather') === 'Leather' && composition('Suede') === 'Suede',
+    [composition('Leather'), composition('Suede')]);
+
+  // Percentages are transcribed, never computed: nothing sums, normalises or
+  // reorders them, even when the label does not add up.
+  check('percentages are not summed or corrected',
+    composition('60% Cotton 60% Polyester') === '60% Cotton 60% Polyester',
+    composition('60% Cotton 60% Polyester'));
+  check('a decimal percentage is preserved',
+    composition('97,5% Cotton 2,5% Elastane') === '97,5% Cotton 2,5% Elastane',
+    composition('97,5% Cotton 2,5% Elastane'));
+
+  section('The composition split is lossless');
+  const { assertLossless } = await import('../src/utils/composition');
+  for (const sample of [
+    '100% Cotton',
+    '80% Cotton 20% Polyester',
+    '40% Cotton 40% Nylon 20% Elastane',
+    '60% Wool, 40% Polyamide',
+    'Upper: Leather / Sole: Rubber',
+    'Leather',
+    'Cotton 100%',
+    '  95% Cotton   5% Elastane  ',
+  ]) {
+    check(`split and rejoin reproduces ${JSON.stringify(sample)}`, assertLossless(sample));
   }
 
   section('Unrecognisable text is kept, never forced onto a wrong entry');
@@ -181,6 +297,8 @@ async function main(): Promise<void> {
     sub_category: cf('Trousers', 0.87),
     gender: cf('Women', 0.9),
     season: cf('All Seasons', 0.88),
+    care_info: cf('', 0),
+    key_photo_index: 0,
     weights: [cf('290g', 0.86), cf('240g', 0.86)],
   });
 
@@ -191,7 +309,9 @@ async function main(): Promise<void> {
     normalized.sub_category.value === 'Trousers',
     normalized.sub_category,
   );
-  check('material selected locally', normalized.material.value === 'Cotton', normalized.material);
+  // v1.4: matched per fibre segment, so the percentage survives the trip.
+  check('material keeps its composition through normalisation',
+    normalized.material.value === '100% Cotton', normalized.material);
 
   check('color passed through untouched', normalized.color.value === 'Blue - Navy', normalized.color);
   check('gender passed through untouched', normalized.gender.value === 'Women', normalized.gender);
@@ -199,8 +319,48 @@ async function main(): Promise<void> {
   check('category passed through untouched', normalized.category.value === 'clothing', normalized.category);
 
   check('confidence preserved through selection', normalized.sub_category.confidence === 0.87);
-  check('size untouched', normalized.size.value === 'XL');
+  // The EU rule is applied by the model, not the server: `size` passes through
+  // neither MATCHED_FIELDS nor CONSTRAINED_FIELDS, so whatever the model
+  // reports is what the device gets. A plain letter size must survive that.
+  check('a plain letter size is passed through untouched', normalized.size.value === 'XL');
+  check('care_info empty when the model saw no QR code',
+    normalized.care_info.value === '' && normalized.care_info.confidence === 0,
+    normalized.care_info);
   check('weights still folded', normalized.brutto.value === '290g' && normalized.netto.value === '240g');
+
+  section('A decoded care QR code is reported, but never as if it were read');
+  const { careInfoConfidence } = await import('../src/services/visionService');
+  const { env } = await import('../src/config/env');
+  const withQr = normalizeExtraction({
+    brand_name: cf('Zara', 0.9),
+    country_of_origin: cf('ITALY', 0.9),
+    size: cf('EU 122/128', 0.9),
+    color: cf('Black', 0.9),
+    material: cf('100% Cotton', 0.9),
+    original_price: cf('', 0),
+    category: cf('clothing', 0.9),
+    sub_category: cf('Trousers', 0.9),
+    gender: cf('Women', 0.9),
+    season: cf('Summer', 0.9),
+    care_info: cf('https://care.example.com/x7f9', 0.95),
+    key_photo_index: 1,
+    weights: [],
+  });
+  check('the URL itself is reported verbatim',
+    withQr.care_info.value === 'https://care.example.com/x7f9', withQr.care_info);
+  // Gemini is not a QR decoder, and a misread URL cannot be caught by eye.
+  check('an over-confident QR read is capped',
+    withQr.care_info.confidence <= 0.6, withQr.care_info);
+  check('the cap lands below FLYWHEEL_CONFIDENCE_THRESHOLD, so it routes for review',
+    withQr.care_info.confidence < env.flywheelConfidenceThreshold, {
+      capped: withQr.care_info.confidence,
+      threshold: env.flywheelConfidenceThreshold,
+    });
+  check('a confidence already below the cap is not raised to it',
+    careInfoConfidence(0.2) === 0.2, careInfoConfidence(0.2));
+  // Lowering the threshold must not quietly switch the review off.
+  check('the cap tracks the threshold when the threshold is lowered',
+    careInfoConfidence(0.95, 0.4) < 0.4, careInfoConfidence(0.95, 0.4));
 
   section('An off-list constrained value is passed through, not rewritten');
   const odd = normalizeExtraction({
@@ -214,9 +374,76 @@ async function main(): Promise<void> {
     sub_category: cf('', 0),
     gender: cf('Women', 0.9),
     season: cf('Summer', 0.9),
+    care_info: cf('', 0),
+    key_photo_index: -1,
     weights: [],
   });
   check('unexpected colour preserved verbatim', odd.color.value === 'Chartreuse', odd.color);
+
+  // ------------------------------------------------------------------------
+  section('data_hy: 13 keys, sourced from the reference catalogue');
+  const { buildArmenianData, NEVER_TRANSLATED } = await import(
+    '../src/services/armenianService'
+  );
+  const { EXTRACTED_FIELDS } = await import('../src/types');
+  const hy = buildArmenianData(withQr);
+  const armenianScript = /[\u0530-\u058f]/;
+
+  check('all 13 keys present, same set as data',
+    Object.keys(hy).length === 13 &&
+      EXTRACTED_FIELDS.every((f) => f in hy),
+    Object.keys(hy));
+  check('every value is a plain string or null - no confidence',
+    Object.values(hy).every((v) => v === null || typeof v === 'string'), hy);
+  check('the seven never-translated keys are null by design',
+    NEVER_TRANSLATED.every((f) => hy[f] === null), hy);
+  check('sub_category comes from the reference table, not a translator',
+    hy.sub_category === referenceEntries('sub_category').find((e) => e.en === 'Trousers')?.hy,
+    hy.sub_category);
+  check('color comes from the reference table',
+    hy.color === referenceEntries('color').find((e) => e.en === 'Black')?.hy, hy.color);
+  check('category comes from enums.json, the one taxonomy with no client CSV',
+    typeof hy.category === 'string' && armenianScript.test(hy.category), hy.category);
+  check('material is rendered per fibre, with the percentage kept',
+    typeof hy.material === 'string' && hy.material.startsWith('100% ') &&
+      armenianScript.test(hy.material),
+    hy.material);
+
+  // Multi-fibre, and a fibre the tables cannot place.
+  const mixed = buildArmenianData({
+    ...withQr,
+    material: cf('80% Cotton 20% Polyester', 0.9),
+  });
+  check('a two-fibre composition renders both fibres in Armenian',
+    typeof mixed.material === 'string' &&
+      mixed.material.includes('80%') && mixed.material.includes('20%') &&
+      !/[A-Za-z]/.test(mixed.material),
+    mixed.material);
+
+  const partly = buildArmenianData({ ...withQr, material: cf('90% Cotton 10% Unobtanium', 0.9) });
+  check('an untranslatable fibre stays English inside the Armenian string',
+    typeof partly.material === 'string' && partly.material.includes('Unobtanium') &&
+      armenianScript.test(partly.material),
+    partly.material);
+
+  // Rule 1: null means "display the English value", never "show nothing".
+  const unmatched = buildArmenianData({
+    ...withQr,
+    sub_category: cf('Qzxwv Nonsense', 0.4),
+    material: cf('100% Unobtanium', 0.4),
+  });
+  check('a value with no table row is null, not blank and not machine-translated',
+    unmatched.sub_category === null, unmatched.sub_category);
+  check('a composition with nothing translatable is null, not half-empty',
+    unmatched.material === null, unmatched.material);
+
+  const blank = buildArmenianData(emptyExtractionForTest());
+  check('an empty extraction still returns all 13 keys, every one null',
+    Object.keys(blank).length === 13 && Object.values(blank).every((v) => v === null),
+    blank);
+
+  check('nothing Armenian leaked back into data',
+    Object.values(withQr).every((f) => !armenianScript.test(f.value)), withQr);
 
   // ------------------------------------------------------------------------
   section('Selection latency at real table sizes');

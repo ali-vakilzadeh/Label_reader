@@ -25,7 +25,18 @@ export interface ConfidenceScreen {
   belowThreshold: boolean;
 }
 
-/** Finds the weakest field in an extraction payload. */
+/**
+ * Finds the weakest field in an extraction payload.
+ *
+ * **`care_info` is skipped when it is empty (v1.4).** Most garments carry no care
+ * QR code at all, so an absent one is the normal state of a label rather than a
+ * weak reading of it. Letting its 0.0 drag the screen down would capture every
+ * single scan and evict genuinely uncertain samples from a capped buffer,
+ * turning the flywheel into a firehose. A `care_info` that *is* present is
+ * always screened, and always routes: its confidence is capped below the
+ * threshold by `careInfoConfidence()`, because a misread URL is the one error
+ * an operator cannot spot by eye.
+ */
 export function screenConfidence(
   data: ExtractedData,
   threshold = env.flywheelConfidenceThreshold,
@@ -34,6 +45,7 @@ export function screenConfidence(
   let lowestField: string | null = null;
 
   for (const [field, entry] of Object.entries(data)) {
+    if (field === 'care_info' && !entry?.value) continue;
     const confidence = entry?.confidence ?? 0;
     if (confidence < lowest) {
       lowest = confidence;

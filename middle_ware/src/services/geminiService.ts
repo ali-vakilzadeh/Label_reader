@@ -237,6 +237,23 @@ function describe(error: unknown): string {
  * where the allowed set is small enough to state, so the model picks from it and
  * the answer is used exactly as returned. Those lists come from the same taxonomy
  * files the matcher indexes, so prompt and server can never disagree.
+ *
+ * Three v1.4 rules are prompt-only, because the server has no table to check
+ * them against:
+ *
+ *  - **`size`** is free text — it passes through neither MATCHED_FIELDS nor
+ *    CONSTRAINED_FIELDS — so "report the European value only" has to be a
+ *    reading instruction. Its fallback carries as much weight as the rule: a
+ *    label with no European reference is reported as printed, because the rule
+ *    is meant to choose between the systems a label prints, not to manufacture
+ *    one. Without that sentence every adult garment labelled `XL` would break.
+ *  - **`care_info`** is a URL decoded from a QR code. The server cannot verify
+ *    it, so the prompt asks for an empty string over a plausible guess, and
+ *    `normalizeExtraction` caps the confidence on top of that.
+ *  - **`key_photo_index`** is a judgement about the batch of photos rather than
+ *    about the garment, so it leaves the schema outside `data` and lands in the
+ *    response envelope. -1 is the "cannot choose" answer; the schema has no way
+ *    to say null.
  */
 export function buildSystemInstruction(): string {
   return [
@@ -253,8 +270,28 @@ export function buildSystemInstruction(): string {
     'you report must total 100%; never add translations together. Translate a fibre',
     'named only in a foreign language into its English name (algodon/cotone ->',
     'Cotton, laine/lana -> Wool, pelle/cuir -> Leather).',
-    'Extract size and original_price as printed.',
+    'SIZE: a label often prints the same size in several systems, e.g.',
+    '"US 6X/7 CA 6-8A EUR 122/128 CN 130/64 MX 6-8A AUS 7-8 UK 6-8Y". When it',
+    'does, report ONLY the European one and write its prefix as "EU", whether the',
+    'label says "EU" or "EUR" — that example is exactly "EU 122/128". Copy the',
+    'value after the prefix character for character; never simplify, split or',
+    'convert it. When the label shows NO European size, report the size exactly as',
+    'printed and add no prefix: a garment labelled only "XL" is "XL", and one',
+    'labelled only "32W x 34L" is "32W x 34L". Choose between the systems the',
+    'label prints; never invent one it does not.',
+    'Extract original_price as printed.',
     'Read weights from scale displays into an array.',
+    'CARE QR CODE: many garments carry a QR code linking to care and usage',
+    'instructions. If one is visible and you can decode it, return the URL it',
+    'encodes in care_info. Return the URL only — no surrounding words. If no QR',
+    'code is visible, or you cannot read it with certainty, return an empty string',
+    'at 0.0 confidence rather than a plausible-looking guess: a wrong URL cannot be',
+    'spotted by eye.',
+    'KEY PHOTO: the images are numbered from 0 in the order given. In',
+    'key_photo_index return the number of the one that works best as the main',
+    'product shot — the whole garment or shoe, not a care label, a barcode tag, a',
+    'price ticket or a scale display. If no image shows the product itself, return',
+    '-1; do not fall back to 0.',
     'For the following fields choose exactly one option from the list given:',
     `color from [${TAXONOMY_KEYS.color}];`,
     `category from [${TAXONOMY_KEYS.category}];`,
@@ -297,7 +334,13 @@ export function buildExtractionSchema(): Schema {
       country_of_origin: confidenceField(
         'Country of manufacture exactly as printed, e.g. "Made in Viet Nam".',
       ),
-      size: confidenceField('Size as printed, e.g. "XL", "EU 42", "32W x 34L".'),
+      size: confidenceField(
+        'The EUROPEAN size only, prefixed "EU", when the label prints several ' +
+          'systems: "US 6X/7 CA 6-8A EUR 122/128 CN 130/64" is "EU 122/128". ' +
+          'Normalise "EUR" to "EU" and copy the value after it verbatim. When the ' +
+          'label carries no European size, report it exactly as printed with no ' +
+          'prefix added, e.g. "XL", "32W x 34L".',
+      ),
       color: confidenceField(`Dominant color, one of: ${TAXONOMY_KEYS.color}.`),
       material: confidenceField(
         'Fibre composition in ENGLISH ONLY, e.g. "80% Cotton 20% Polyester". ' +
@@ -314,6 +357,18 @@ export function buildExtractionSchema(): Schema {
       ),
       gender: confidenceField(`One of: ${TAXONOMY_KEYS.gender}.`),
       season: confidenceField(`One of: ${TAXONOMY_KEYS.season}.`),
+      care_info: confidenceField(
+        'The URL encoded in the garment care/usage QR code, if one is visible and ' +
+          'you can decode it. The URL alone, nothing else. Empty string at 0.0 ' +
+          'confidence when there is no QR code or you are not certain of the read.',
+      ),
+      key_photo_index: {
+        type: Type.INTEGER,
+        description:
+          'Zero-based number of the image that best serves as the main product ' +
+          'shot (the garment or shoe itself, not a label, tag or scale display). ' +
+          '-1 when no image shows the product.',
+      },
       weights: {
         type: Type.ARRAY,
         description:
@@ -332,6 +387,8 @@ export function buildExtractionSchema(): Schema {
       'sub_category',
       'gender',
       'season',
+      'care_info',
+      'key_photo_index',
       'weights',
     ],
   };
@@ -369,10 +426,14 @@ export async function extractApparelData(
           {
             text:
               'Extract the structured apparel record from these images. ' +
+              `There are ${images.length} images, numbered 0 to ${images.length - 1} ` +
+              'in the order given. ' +
               'Report every visible scale reading in the weights array. ' +
               'Give material in English only, collapsing any multilingual ' +
               'composition into one English wording; for shoes with no printed ' +
-              'composition, infer the material from the construction.',
+              'composition, infer the material from the construction. ' +
+              'Give size as the European value only when the label prints several ' +
+              'systems, otherwise exactly as printed.',
           },
         ],
       },

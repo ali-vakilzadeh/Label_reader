@@ -43,8 +43,37 @@ const CONTRACT_FIELDS = [
   'estimated_wait_seconds',
   'retry_after_seconds',
   'blocking_fault',
+  'suggested_key_photo_index',
   'data',
+  'data_hy',
 ];
+
+/** The 13 fields `data` and `data_hy` both carry, in contract order. */
+const DATA_FIELDS = [
+  'brand_name',
+  'country_of_origin',
+  'size',
+  'color',
+  'material',
+  'original_price',
+  'netto',
+  'brutto',
+  'category',
+  'sub_category',
+  'gender',
+  'season',
+  'care_info',
+];
+
+/** Armenian script, for asserting a lookup actually resolved. */
+const ARMENIAN = /[\u0530-\u058f]/;
+
+/** Both objects carry all 13 keys, and never a fourteenth. */
+function hasThirteen(payload: Record<string, any> | null | undefined): boolean {
+  if (!payload) return false;
+  const keys = Object.keys(payload);
+  return keys.length === 13 && DATA_FIELDS.every((f) => keys.includes(f));
+}
 
 async function main(): Promise<void> {
   const { controlDb } = await import('../src/db/controlDb');
@@ -150,19 +179,59 @@ async function main(): Promise<void> {
   ).json()) as Record<string, any>;
   check('PENDING_AI while queued', pending.processing_status === 'PENDING_AI', pending.processing_status);
   check('data null while queued', pending.data === null);
+  check('data_hy null while queued', pending.data_hy === null, pending.data_hy);
+  check('no suggestion until extraction has run',
+    pending.suggested_key_photo_index === null, pending.suggested_key_photo_index);
   check('attention_reason null while queued', pending.attention_reason === null);
 
   completeExtraction(
     'ASYNC-001',
-    JSON.stringify({ ...emptyExtraction(), brand_name: { value: 'LIU JO', confidence: 0.99 } }),
+    JSON.stringify({
+      ...emptyExtraction(),
+      brand_name: { value: 'LIU JO', confidence: 0.99 },
+      sub_category: { value: 'Trousers', confidence: 0.9 },
+      material: { value: '80% Cotton 20% Polyester', confidence: 0.9 },
+    }),
+    // The model's main-photo suggestion, committed with the extraction.
+    2,
   );
   const ready = (await (
     await fetch(`${base}/api/v1/vision/result/ASYNC-001`, { headers: auth })
   ).json()) as Record<string, any>;
   check('READY_TO_CONFIRM once extracted', ready.processing_status === 'READY_TO_CONFIRM');
   check('data present when ready', ready.data?.brand_name?.value === 'LIU JO', ready.data?.brand_name);
-  check('all 12 fields returned', Object.keys(ready.data).length === 12, Object.keys(ready.data).length);
+  check('all 13 fields returned', hasThirteen(ready.data), Object.keys(ready.data ?? {}));
+  check('data_hy returns the same 13 keys', hasThirteen(ready.data_hy), Object.keys(ready.data_hy ?? {}));
   check('terminal state reports no wait', ready.estimated_wait_seconds === 0, ready.estimated_wait_seconds);
+
+  // v1.4 4.2: the suggestion is persisted with the extraction, so a result
+  // fetched at any later time pre-selects the same photo.
+  check('suggested_key_photo_index survives a result re-fetch',
+    ready.suggested_key_photo_index === 2, ready.suggested_key_photo_index);
+  const refetched = (await (
+    await fetch(`${base}/api/v1/vision/result/ASYNC-001`, { headers: auth })
+  ).json()) as Record<string, any>;
+  check('and again on a second fetch',
+    refetched.suggested_key_photo_index === 2, refetched.suggested_key_photo_index);
+
+  // 8.3: null means "display the English value", never "show nothing".
+  check('data_hy translates what the tables cover',
+    typeof ready.data_hy?.sub_category === 'string' &&
+      ARMENIAN.test(ready.data_hy.sub_category),
+    ready.data_hy?.sub_category);
+  check('data_hy renders material per fibre',
+    typeof ready.data_hy?.material === 'string' &&
+      ARMENIAN.test(ready.data_hy.material) &&
+      ready.data_hy.material.includes('80%') &&
+      ready.data_hy.material.includes('20%'),
+    ready.data_hy?.material);
+  check('the seven never-translated keys are null',
+    ['brand_name', 'country_of_origin', 'size', 'original_price', 'netto', 'brutto',
+      'care_info'].every((f) => ready.data_hy?.[f] === null),
+    ready.data_hy);
+  check('data_hy values are plain strings or null, never {value, confidence}',
+    Object.values(ready.data_hy ?? {}).every((v) => v === null || typeof v === 'string'),
+    ready.data_hy);
 
   failExtraction('ASYNC-002', 'PARKED', 'VISION_REQUEST_REJECTED', 'Images unreadable.', null);
   const parked = (await (
@@ -171,6 +240,7 @@ async function main(): Promise<void> {
   check('NEEDS_ATTENTION when parked', parked.processing_status === 'NEEDS_ATTENTION');
   check('attention_reason explains why', parked.attention_reason === 'Images unreadable.', parked.attention_reason);
   check('data null when parked', parked.data === null);
+  check('data_hy null when parked', parked.data_hy === null, parked.data_hy);
 
   // ---------------------------------------------------------------- §4.4 ---
   section('§4.4 batch results');
@@ -212,6 +282,11 @@ async function main(): Promise<void> {
     dupOfReady.processing_status === 'READY_TO_CONFIRM', dupOfReady.processing_status);
   check('duplicate returns the stored data',
     dupOfReady.data?.brand_name?.value === 'LIU JO', dupOfReady.data?.brand_name);
+  check('duplicate replay carries 13 data and 13 data_hy keys',
+    hasThirteen(dupOfReady.data) && hasThirteen(dupOfReady.data_hy),
+    [Object.keys(dupOfReady.data ?? {}).length, Object.keys(dupOfReady.data_hy ?? {}).length]);
+  check('duplicate replay repeats the stored suggestion',
+    dupOfReady.suggested_key_photo_index === 2, dupOfReady.suggested_key_photo_index);
 
   const dupOfParked = (await (await post(form('ASYNC-002', photo))).json()) as Record<string, any>;
   check('duplicate of a parked scan stays NEEDS_ATTENTION',
@@ -226,6 +301,7 @@ async function main(): Promise<void> {
   completeExtraction(
     'ASYNC-003',
     JSON.stringify({ ...emptyExtraction(), brand_name: { value: 'Nike', confidence: 0.95 } }),
+    1,
   );
   const cloneRes = await post(form('ASYNC-CLONE', photo, { cloned_from: 'ASYNC-003' }));
   const clone = (await cloneRes.json()) as Record<string, any>;
@@ -233,6 +309,18 @@ async function main(): Promise<void> {
   check('clone is READY_TO_CONFIRM', clone.processing_status === 'READY_TO_CONFIRM');
   check('clone carries inherited data', clone.data?.brand_name?.value === 'Nike');
   check('clone echoes cloned_from', clone.cloned_from === 'ASYNC-003', clone.cloned_from);
+  check('clone carries 13 data and 13 data_hy keys',
+    hasThirteen(clone.data) && hasThirteen(clone.data_hy),
+    [Object.keys(clone.data ?? {}).length, Object.keys(clone.data_hy ?? {}).length]);
+  // The clone shares the parent's photos, so it inherits the parent's answer
+  // rather than calling the model again.
+  check('clone inherits the parent suggestion',
+    clone.suggested_key_photo_index === 1, clone.suggested_key_photo_index);
+  const cloneRefetch = (await (
+    await fetch(`${base}/api/v1/vision/result/ASYNC-CLONE`, { headers: auth })
+  ).json()) as Record<string, any>;
+  check('and it was persisted, not just echoed',
+    cloneRefetch.suggested_key_photo_index === 1, cloneRefetch.suggested_key_photo_index);
 
   const orphan = await post(form('ASYNC-ORPHAN', photo, { cloned_from: 'DOES-NOT-EXIST' }));
   check('unknown parent -> 404', orphan.status === 404, orphan.status);
@@ -266,7 +354,7 @@ async function main(): Promise<void> {
   // ----------------------------------------------------------------- health
   section('§4.5 health advertises the contract revision');
   const health = (await (await fetch(`${base}/health`)).json()) as Record<string, any>;
-  check('api_contract is 1.3', health.api_contract === '1.3', health.api_contract);
+  check('api_contract is 1.4', health.api_contract === '1.4', health.api_contract);
   check('gemini_ready reported', typeof health.gemini_ready === 'boolean');
 
   // --------------------------------------------------- safety hardening ---

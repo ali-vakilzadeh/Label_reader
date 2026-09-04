@@ -5,8 +5,9 @@
 **Stack:** Node.js 20 LTS · TypeScript 5.8 · Express 4.21 · better-sqlite3 11 · @google/genai 1.x
 **Status:** Feature-complete against `api_contract.md` and `server_specification.json`, plus a
 durable intake queue, a UI control channel, a fully asynchronous client protocol
-(`api_contract.md` **v1.3**) and a bilingual reference-table channel. Build and typecheck clean;
-**461 checks pass with no network access**. The vision path is verified against the live API with real photos.
+(`api_contract.md` **v1.4**), a bilingual reference-table channel and Armenian rendering of AI
+results. Build and typecheck clean; **537 checks pass with no network access**. The vision path is
+verified against the live API with real photos.
 
 **Companion documents:**
 [`api_contract.md`](api_contract.md) (Android) ·
@@ -230,7 +231,8 @@ POST /api/v1/vision/extract   (multipart/form-data, Bearer token)
          interceptLowConfidence()   best-effort, never throws
                                                                 │
    200  { status, apparel_id, cloned_from, timestamp,           │
-          catalog_image_url, data: { 12 fields } }  ◄───────────┘
+          catalog_image_url, data: { 13 fields },
+          data_hy, suggested_key_photo_index }  ◄──────────────┘
 ```
 
 Two properties worth calling out:
@@ -354,7 +356,9 @@ database, because they are not the same database. `flywheelDb.ts` is imported on
 
 ### 5.2 Capture rule
 
-After normalisation, `screenConfidence()` walks all 12 fields and finds the weakest:
+After normalisation, `screenConfidence()` walks the 13 fields and finds the weakest — skipping
+`care_info` when it is empty, because most garments carry no care QR code and an absent one is not
+a weak reading ([§24.2b](#242b-care_info--the-care-qr-code-v14)):
 
 ```ts
 if (lowest < FLYWHEEL_CONFIDENCE_THRESHOLD)   // default 0.85
@@ -513,6 +517,12 @@ produces clean diffs in git.
 match a dictionary key. `translateMaterial()` splits on separators **and before each `NN%`
 token**, translating each fibre while preserving its percentage:
 
+> **Since v1.4** that split lives in `utils/composition.ts` and is shared with the English
+> normalisation and with `data_hy`; `translateMaterial()` kept the legal-map lookup and lost its
+> private copy of the regex. See [§24.2](#242-material--the-full-composition-v14). The legal map
+> and the reference catalogue remain separate sources with separate jobs — see
+> [§26.7](#267-data_hy--armenian-for-ai-results-v14).
+
 ```
 "38% Cotton 27% Wool 20% Polyamide 15% Polyester"
    -> "38% բամբակ, 27% բուրդ, 20% պոլիամիդ, 15% պոլիեսթեր"
@@ -563,7 +573,8 @@ Request `{ "password": "...", "username": "emp_402" }` →
 | `images` | file[] | conditional | ≤8 JPEG/PNG/WebP; required unless `cloned_from` is set |
 
 Response is the contract payload: `status`, `apparel_id`, `cloned_from`, `timestamp`,
-`catalog_image_url`, and `data` with all 12 fields as `{ value, confidence }`.
+`catalog_image_url`, `data` with all 13 fields as `{ value, confidence }`, `data_hy` with the
+same 13 keys as plain strings or null, and `suggested_key_photo_index`.
 
 ### Hidden: `/api/v1/flywheel/*` — Bearer + `x-flywheel-key`
 
@@ -640,6 +651,9 @@ CREATE TABLE server_scans (
   next_attempt_at       INTEGER,            -- backoff timer for the drain worker
   image_digest          TEXT,               -- SHA-256 of the photos, for replay detection
   completed_at          INTEGER,
+  -- v1.4: the model's main-photo suggestion. NULL means "no suggestion" -- either
+  -- extraction has not run or the model declined; neither may default to photo 0.
+  suggested_key_photo_index INTEGER,
   created_at        INTEGER NOT NULL,       -- epoch ms
   updated_at        INTEGER NOT NULL
 );
@@ -1421,7 +1435,9 @@ GET /api/v1/vision/result/:apparel_id     (Bearer)
   "extraction_status": "COMPLETED",
   "extraction_fault_code": null,
   "catalog_image_url": "https://.../catalog/IMG_890123456789.jpg",
-  "data": { "...": "12 fields" }
+  "data": { "...": "13 fields" },
+  "data_hy": { "...": "13 keys, string or null" },
+  "suggested_key_photo_index": 2
 }
 ```
 
@@ -1767,11 +1783,22 @@ described the opposite arrangement.
 
 | | Fields | Gemini's job | Middleware's job |
 |---|---|---|---|
-| **Reported** | `sub_category`, `brand_name`, `country_of_origin`, `material` | Transcribe what is printed, verbatim. **No option list is sent** | Replace the transcription with the closest client table entry |
+| **Reported** | `sub_category`, `brand_name`, `country_of_origin` | Transcribe what is printed, verbatim. **No option list is sent** | Replace the transcription with the closest client table entry |
+| **Reported, per segment** | `material` | Transcribe the composition, in one English wording | Replace **each fibre name** with the closest table entry; keep the percentages |
 | **Constrained** | `category`, `color`, `gender`, `season` | Choose one option from the list in the prompt | Use the value **exactly as returned** |
+| **Free text** | `size`, `original_price`, `netto`, `brutto`, `care_info` | Read and report | Nothing — no table exists to check them against |
 
 Table sizes: 295 sub-categories, 839 brands, 222 countries, 85 materials — 1,441 entries against
 41 for the four constrained enums.
+
+**`material` is a reported field with a different unit of work (v1.4).** It is still matched
+against the client's table and it is still never listed in the prompt, so it belongs in the
+reported group. What changed is *what* gets matched: the 85 entries are fibre **names**, while
+the value is a **composition** — a sentence, not a term. Matching the whole sentence is what
+produced the defect in [§24.2](#242-material--the-full-composition-v14). `material` therefore
+left `MATCHED_FIELDS`, which is now specifically "fields whose whole string is snapped", and is
+handled by `normalizeComposition()` instead. The distinction is worth keeping in mind when
+reading `visionService.normalizeExtraction()`: three branches, not two.
 
 **Why the split.** Listing 1,441 values in every request would cost tokens on every scan, and —
 more importantly — it changes the task. A model handed a long list of plausible garment types
@@ -1785,7 +1812,7 @@ could never be told about a value the matcher didn't know. That was right at 14 
 and wrong at 295. `TAXONOMY_KEYS` now exposes only the constrained enums, and a smoke check
 asserts that no long-table entry appears in either the instruction or the response schema.
 
-### 24.2 `material` — the two departures from verbatim reporting
+### 24.2 `material` — the full composition (v1.4)
 
 `material` is a reported field, so the model transcribes what the label says. Two label
 realities make pure verbatim transcription wrong, and the system instruction states both
@@ -1815,9 +1842,183 @@ material table: `Leather` and `Suede` land on themselves, while `Leather + Sole:
 snaps onto the unrelated table row `Leather + Sole: Textile`. `tests/taxonomySelection.ts`
 asserts that every term the prompt suggests is a real table entry that matches to itself.
 
-Note that the matcher drops the percentage from a single-fibre composition: `100% Cotton`
-normalises to the canonical key `Cotton`. Multi-fibre compositions (`80% Cotton 20% Polyester`)
-find no whole-string match and are kept as transcribed, then split per fibre at export.
+#### The whole-string match, and why it went
+
+Until v1.4 `material` sat in `MATCHED_FIELDS`, so the entire composition string was fuzzy-matched
+against a table of 85 single fibre names. Measured against the real table:
+
+```
+"100% Cotton"                       ->  "Cotton"      matched — the percentage was destroyed
+"80% Cotton 20% Polyester"          ->  unchanged     nothing cleared the threshold
+"100% ALGODÓN / ALGODÃO / COTTON…"  ->  unchanged     nothing cleared the threshold
+```
+
+A one-fibre composition was snapped and lost its percentage; a multi-fibre one survived **only
+because nothing matched**. That inconsistency is what the client reported: the same label
+information came back complete or truncated depending on how many fibres it happened to name.
+Neither result was designed, and the surviving case was an accident of the similarity threshold —
+raise it slightly and multi-fibre compositions would have started collapsing too.
+
+#### What replaces it
+
+`normalizeComposition()` matches **per fibre segment**. The composition is split, each fibre name
+is snapped onto the table, and the string is reassembled:
+
+```
+"100% Cotton"                       ->  "100% Cotton"
+"80% COTONE 20% POLIESTER"          ->  "80% Cotton 20% Polyester"
+"40% Cotton 40% Nylon 20% Elastane" ->  unchanged
+"70% Cotton 30% Unobtanium"         ->  unchanged     — the unknown fibre passes through
+"Leather"          (shoe, inferred) ->  "Leather"
+```
+
+Four properties, each of which a test pins:
+
+1. **Percentages are transcribed, never computed.** Nothing sums, normalises or reorders them.
+   `60% Cotton 60% Polyester` is reported exactly as printed, because a composition an operator
+   can check against the tag is worth more than a tidy one.
+2. **The label's own punctuation survives.** The split is *lossless* — every segment keeps the
+   separator and spacing that surrounded it — so a space-separated composition comes back
+   space-separated and a comma-separated one keeps its commas. This is why `mapComposition()`
+   substitutes fibre names in place rather than splitting and rejoining.
+3. **An unplaced fibre passes through as transcribed.** Never forced onto a near miss; the same
+   rule as [§24.3](#243-when-nothing-matches), applied one level down. `Algodon` stays `Algodon`
+   rather than becoming some fibre it merely resembles.
+4. **A single term still lands on itself,** so the footwear inference above is unaffected.
+
+**What the matcher does not do is translate.** Collapsing a six-language composition to one
+English wording is the model's job, stated in the prompt. The matcher turns `POLIESTER` into
+`Polyester` and `COTONE` into `Cotton` by orthographic similarity, not by knowing Spanish or
+Italian — `ALGODON` and `Baumwolle` reach it unmatched and are passed through. The two halves are
+complementary and neither substitutes for the other: the prompt supplies the language, the
+matcher supplies the invariance.
+
+#### One parser, three call sites
+
+`utils/composition.ts` owns the segmentation. Three places need to reach inside a composition and
+they must agree on where the fibres are:
+
+| Call site | Lookup | Reassembly |
+|---|---|---|
+| `normalizeComposition()` | the 85-entry material table | lossless — the label's own punctuation |
+| `armenianService.armenianComposition()` | `material.csv`'s Armenian column | `, `-joined |
+| `exportService.translateMaterial()` | the legal Armenian map | `, `-joined |
+
+The two Armenian renderings rejoin with commas because the source punctuation is an artefact of
+how the label was printed and the operator is *reading* those strings, not checking them against
+the tag. The English value is the one that gets checked, so it keeps what the label said. The
+segmentation regex existed only in `translateMaterial()` before v1.4 and was lifted out rather
+than copied — a second parser would have drifted the first time a label used a new separator.
+
+### 24.2a `size` — the European value only (v1.4)
+
+Labels routinely print one size in up to seven systems:
+
+```
+label     US 6X/7  CA 6-8A  EUR 122/128  CN 130/64  MX 6-8A  AUS 7-8  UK 6-8Y
+sends     EU 122/128
+```
+
+The server reports only the European one, with the prefix normalised to `EU` whether the label
+printed `EU` or `EUR`. The value after the prefix is transcribed character for character —
+`122/128` is not simplified, split or converted.
+
+**This is a prompt-and-schema change only.** `size` is free text: it passes through neither
+`MATCHED_FIELDS` nor `CONSTRAINED_FIELDS`, so there is no server-side step that could enforce the
+rule and none was added. Whatever the model reports is what the device receives.
+
+**The fallback carries as much weight as the rule.** A label with no European reference is
+reported **as printed, with no prefix invented**: `XL` stays `XL`, `32W x 34L` stays
+`32W x 34L`. The rule chooses between the size systems a label prints; it does not manufacture
+one. Getting this wrong would break every adult garment with a plain letter size, which is most
+of them — so the prompt states the fallback explicitly and `tests/taxonomySelection.ts` asserts
+that both halves are present in the instruction and in the schema description.
+
+### 24.2b `care_info` — the care QR code (v1.4)
+
+The thirteenth extracted field. Garments increasingly carry a QR code linking to care and usage
+instructions; the model decodes it from the photos and returns the URL.
+
+**It lives inside `data`,** because it is read off the garment by the model and `data` is AI
+output. This is the same invariant that keeps `package_code` and `set_size` out of the API
+entirely — those are operator-entered, so they travel in the device database and the CSV and
+nowhere else. No database migration was needed: `server_scans.raw_json_data` and
+`flywheel_training.unconfirmed_gemini_json` are JSON blobs, so a thirteenth key costs nothing.
+
+`{ "value": "", "confidence": 0.0 }` when no QR code is visible, like any other unreadable field,
+and its `data_hy` entry is always `null` — a URL is not translated.
+
+#### The confidence treatment, and why it is not just a number
+
+Gemini is not a QR decoder. It reads QR content with real but imperfect reliability, and a
+misread URL is the one extraction error nobody can catch by eye: `…/x7f9` and `…/x7f8` look
+equally correct on a review screen, unlike a misread brand name or a country that reads wrong at
+a glance.
+
+So the value is reported and its confidence is **capped**, in `visionService.careInfoConfidence()`:
+
+```
+ceiling  = min(0.60, FLYWHEEL_CONFIDENCE_THRESHOLD − 0.01)
+reported = min(model's confidence, ceiling)
+```
+
+At the default threshold of 0.85 the ceiling is **0.60**, which is the value `api_contract.md`
+v1.4 §8.4 shows. Two properties are deliberate:
+
+- **It is a cap, not a fixed value.** A model that reports 0.2 keeps 0.2; only over-confidence is
+  trimmed. Replacing a low confidence with 0.60 would be inventing certainty.
+- **It tracks the live threshold.** A fixed 0.60 would stop routing for review the moment a
+  supervisor lowered `FLYWHEEL_CONFIDENCE_THRESHOLD` below it — the review would switch itself
+  off silently, which is the exact failure the cap exists to prevent.
+
+The effect is that every scan carrying a QR read lands in the training DB for operator review
+([§5](#5-the-training-flywheel)), in the same spirit as the inferred footwear material: a value
+produced by judgement rather than by reading must not present itself as read.
+
+#### One consequence, handled: the flywheel screen
+
+`screenConfidence()` takes the lowest confidence across the payload, and an unreadable field
+already scores 0.0. Most garments carry no care QR code at all, so an empty `care_info` would
+have dragged **every single scan** below the threshold and turned a selective training buffer
+into a firehose — evicting genuinely uncertain samples from a capped ring buffer to make room for
+ordinary ones.
+
+`screenConfidence()` therefore skips `care_info` **when it is empty**. An absent QR code is the
+normal state of a label, not a weak reading of one. A `care_info` that is present is always
+screened, and by the cap above always routes.
+
+> On-device QR decoding via ML Kit would be exact and the client has explicitly **deferred** it
+> as a side option (`Commission_TODO_list.md`, *Deferred by decision*). The AI does this job for
+> now; the fallback exists if accuracy disappoints in testing.
+
+### 24.2c `suggested_key_photo_index` (v1.4)
+
+The model proposes which photo is the main product shot. **The operator still decides.**
+
+- **Envelope field, never inside `data`.** It is metadata about the batch of photos, not an
+  attribute of the garment — the same reasoning that puts `data_hy` in the envelope.
+- The request field `key_photo_index` **stays required and unchanged**. The operator's choice
+  remains the authority; this is a pre-selection the star control overrides.
+- `null` until extraction completes, and `null` whenever the model could not choose. It is
+  **never defaulted to `0`**: a wrong confident pre-selection costs the operator a correction
+  they may not notice, while an honest absence costs them the tap they were already making. The
+  response schema cannot express null, so the model returns `-1` and `readSuggestedKeyPhoto()`
+  maps that — along with any out-of-range answer — back to null rather than clamping it.
+- **Persisted, not recomputed.** `GET /vision/result/:id` replays a result long after extraction,
+  so the suggestion is written by `completeExtraction()` in the same statement as the payload. A
+  row can therefore never be `READY_TO_CONFIRM` carrying a suggestion from some earlier attempt.
+  It is a column (`server_scans.suggested_key_photo_index`) rather than a key inside
+  `raw_json_data`, because that blob is parsed straight into `data` and `data` is the thirteen AI
+  fields and nothing else.
+- **Clones inherit it.** A clone shares the parent's photos and never calls the model, so the
+  parent's answer is the answer for the child too.
+- **Dropped when the photo numbering is not intact.** A drain that finds some photos missing from
+  disk still extracts from the ones that survive, but the compacted array no longer lines up with
+  the operator's `key_photo_index` numbering — index 2 to the model would be a different photo to
+  the device. `runExtraction()` detects that and stores `null` rather than a suggestion pointing
+  at the wrong image. The extraction is worth keeping; a misaligned pre-selection is not.
+
+
 
 ### 24.3 When nothing matches
 
@@ -1912,6 +2113,13 @@ vocabulary, and extended in **v1.3**, which added the reference-table endpoint
 ([§26](#26-serving-armenian-without-translating)). Both were coordinated with the Android
 developer.
 
+**v1.4 changed one more value and added three fields.** `material` now carries the whole
+composition rather than a single fibre name, which is a breaking change for any client that
+parsed the old value; `size` carries the European value only; and the response gained
+`care_info`, `suggested_key_photo_index` and `data_hy`. As before, the contract was revised and
+sent to the Android developer **before** the server was changed, so the two could not drift while
+the work was in progress.
+
 ---
 
 ## 25. Bootstrap operator accounts
@@ -1969,7 +2177,7 @@ and those tables already carry the client's Armenian:
 | `color`, `gender`, `season` | yes, model picks from the list | yes |
 | `category` | yes, three values | yes, via the dashboard's `category.csv` |
 | `brand_name`, `country_of_origin` | yes, 839 / 222 entries | **no, by client decision** — English on the paperwork too |
-| `size`, `original_price`, `netto`, `brutto` | no | not translatable — free text and numbers |
+| `size`, `original_price`, `netto`, `brutto`, `care_info` | no | not translatable — free text, numbers and a URL |
 
 An audit of the five bilingual tables found **no row with a missing Armenian cell**. The concern
 that "some items may not be there" turned out to be a *taxonomy* gap, not a translation gap: a
@@ -2064,9 +2272,152 @@ the very next scan.
 | Writing `reference_data/*.csv` | **only writer** | proposes | never |
 | Customs codes | not involved | **owns** | never |
 
+### 26.7 `data_hy` — Armenian for AI results (v1.4)
+
+§26.2 identified two things the app needs Armenian for. The reference-table endpoint solved the
+first — anything the operator *picks or types*. `data_hy` solves the second: the values the model
+just extracted.
+
+The response now carries an Armenian rendering of `data` beside it, so the device never parses or
+translates anything:
+
+```json
+"data":    { "sub_category": { "value": "Trousers", "confidence": 0.85 }, … },
+"data_hy": { "sub_category": "Տաբատներ", "material": "80% Բամբակ, 20% Պոլիեսթեր",
+             "brand_name": null, "size": null, … }
+```
+
+**Shape**, following the discipline `data` already has:
+
+- All **13 keys**, always present, never omitted.
+- Plain strings or `null`. No `{value, confidence}` — the confidence belongs to the extraction,
+  not to a table lookup that either found a row or did not.
+- **`null` means "no Armenian exists — display the English value."** It never means "show
+  nothing". That is `api_contract.md` §8.3 rule 1, unchanged since v1.3.
+- Seven keys are `null` by design, listed in `armenianService.NEVER_TRANSLATED`: `brand_name` and
+  `country_of_origin` (English everywhere including on the paperwork, client decision
+  2026-08-30), and the free-text `size`, `original_price`, `netto`, `brutto` and `care_info`.
+- Present **exactly when `data` is present** — `null` for `PENDING_AI` and `NEEDS_ATTENTION`.
+  `buildScanResponse()` derives it from `parts.data` in one place, which is what guarantees there
+  is no path returning English without its Armenian, or Armenian for a scan that has no data yet.
+- **Nothing Armenian is stored, exported, or accepted back from a client.** English stays the
+  wire and ledger vocabulary; `data_hy` is display, computed per response and thrown away.
+
+#### Which Armenian source — the fork, and the decision
+
+There are two Armenian sources in this repository and they are **not** the same thing:
+
+| Source | What it is | Job |
+|---|---|---|
+| `reference_data/*.csv` via `referenceService` | The seven client tables, versioned, supervisor-editable, already served by `GET /api/v1/reference-tables` | The **display** vocabulary |
+| `data/legalArmenianMap.json` via `exportService` | Built offline from `translations.csv` by `npm run convert:translations` | The **legal / customs** wording |
+
+**`data_hy` is sourced from the reference catalogue.** Three reasons:
+
+1. **App and server cannot disagree.** `data_hy` exists to save the device a lookup it would
+   otherwise perform itself, against exactly these tables. Sourcing it anywhere else would let
+   the AI result and the picker beside it render the same value two different ways — the precise
+   failure §26 was written to prevent.
+2. **A supervisor's edit propagates without a redeploy.** The reference CSVs are written live
+   through `referenceService`; the legal map is a build artefact.
+3. **Coverage.** The legal map holds 140 terms and has no row for `Trousers`, `Women` or
+   `All Seasons`. The catalogue covers all 295 sub-categories, 85 materials, 26 colours, 7
+   genders and 5 seasons.
+
+The legal map is not wrong — it is the *paperwork* wording, and it may legitimately differ from
+what an operator reads on a screen. It keeps its job in `exportService`. **The two are never
+mixed**, and `armenianService` is the only reader of the display source.
+
+`category` is the single exception, and it is a data gap rather than a decision: the client's
+workbook has no category sheet, so its three keys have always lived in `enums.json`
+([§24.5](#245-where-the-data-lives)) and their Armenian now lives there with them, taken from the
+client's own `translations.csv` category rows. Adding a `category` table to
+`GET /api/v1/reference-tables` was rejected — that endpoint's shape is fixed at seven tables by
+`api_contract.md` §4.6 and changing it was not in this batch's scope.
+
+#### `material` is the awkward one
+
+It is a composition, not a table key, so `80% Cotton 20% Polyester` cannot be looked up in one
+step. It is rendered **per fibre segment**, reusing the same `utils/composition.ts` split the
+English normalisation uses — the lookup was swapped, not the parser
+([§24.2](#242-material--the-full-composition-v14)).
+
+A fibre with no Armenian row keeps its English name *inside* the string, which is the display
+rule applied one level down. A composition where **nothing** could be placed returns `null`
+instead, so the app falls back to the whole English string rather than showing a half-rendered
+one.
+
+#### Two places the contract's illustrative examples do not match the client's data
+
+`api_contract.md` §4.2's example object shows `"gender": "Ունիսեքս"` and
+`"season": "Բոլոր եղանակները"`. The client's own `gender.csv` and `season.csv` record `Unisex`
+and `All Seasons` with the **English word in the Armenian column** — a deliberate way of saying
+"this term stays English", enforced by `referenceService.checkArmenian()`. The implementation
+publishes what the table says, so those two arrive as `"Unisex"` and `"All Seasons"`. Likewise
+the example shows `"sub_category": "Տաբատ"` where `sub-category.csv` reads `Տաբատներ`.
+
+The contract's shape rules are met exactly; only the illustrative strings differ, and they differ
+because the tables are the authority. Correcting the examples is a documentation edit for the
+next contract revision, not a code change — and changing the CSVs to match would overwrite the
+client's own wording.
+
 ---
 
 ## 23. Change log
+
+### v1.4 — the full composition, the European size, and Armenian in the response
+
+Implements the middleware half of the 2026-09-04 client decisions
+(`docs/client_decisions_2026-09-04.md` §2). `api_contract.md` was written to v1.4 **first** and
+sent to the Android developer; this release makes the server match it.
+
+**api_contract.md v1.4** (breaking for a client that counted fields or parsed `material`)
+- `data` grows 12 → **13 fields**: `care_info`, a URL decoded from the garment's care QR code.
+- `suggested_key_photo_index` — new **envelope** field, integer or null.
+- `data_hy` — new **envelope** object, Armenian for the same 13 keys, string or null.
+- `material` now carries the **whole composition** (`80% Cotton 20% Polyester`), not one fibre
+  name. §8.1 spells out the migration for an app that parsed the old value.
+- `size` carries the **European value only**, prefix normalised to `EU`.
+- `/health` reports `api_contract: "1.4"`.
+- `key_photo_index` in the request is **unchanged and still required**.
+
+**Middleware**
+- `utils/composition.ts` — new. The one composition parser, lifted out of
+  `exportService.translateMaterial()` and shared by three call sites. The split is lossless, so
+  fibre names can be substituted without disturbing the label's own punctuation.
+- `material` left `MATCHED_FIELDS`; `normalizeComposition()` matches per fibre segment
+  ([§24.2](#242-material--the-full-composition-v14)).
+- `services/armenianService.ts` — new. Builds `data_hy` by lookup against the **reference
+  catalogue**, with the reasoning and the rejected alternative recorded in
+  [§26.7](#267-data_hy--armenian-for-ai-results-v14).
+- `careInfoConfidence()` caps a QR read below `FLYWHEEL_CONFIDENCE_THRESHOLD`, tracking the live
+  threshold rather than sitting at a fixed number
+  ([§24.2b](#242b-care_info--the-care-qr-code-v14)).
+- `screenConfidence()` skips an **empty** `care_info`, so a garment with no QR code — the ordinary
+  case — does not route every scan into the training buffer.
+- `server_scans.suggested_key_photo_index`, added by the existing forward-only `ensureColumn()`
+  migration. Written by `completeExtraction()` in the same statement as the payload; inherited by
+  clones; replayed by both result endpoints.
+- Prompt and schema gained the size rule and its fallback, the care-QR rule, and the key-photo
+  question. The prompt-size ceiling in `tests/taxonomySelection.ts` moved 2600 → 3800 chars; it
+  guards against a long **table** leaking into the prompt, and prose does not arrive 1,000
+  characters at a time.
+- **No change to C#6.** The multilingual-material and footwear-inference rules were already
+  committed at `d63e1aa`. The open question there is deployment, not authoring.
+
+**What deliberately did not change**
+- The long reference tables still never reach the model.
+- `POST /vision/extract` still answers `202` immediately and never blocks on the AI.
+- `data` is still AI output only — `package_code` and `set_size` stay out of the API.
+- Unmatched values still pass through and are logged; off-list constrained values still pass
+  through at warn. Nothing silently rewrites a model answer.
+
+**One defect caught while building.** Adding `care_info` as a thirteenth field would have made
+the flywheel capture **every scan**: `screenConfidence()` reads the lowest confidence in the
+payload, an empty field scores 0.0, and most garments carry no care QR code. Found by reasoning
+about the existing smoke check for an all-high payload before it failed; fixed by skipping an
+empty `care_info` in the screen, which is also the honest rule — an absent QR code is not a weak
+reading of one.
 
 ### v1.3 — Armenian for the operator, English on the wire
 

@@ -65,6 +65,12 @@ ensureColumn('server_scans', 'next_attempt_at', 'INTEGER');
 // re-billing the vision API.
 ensureColumn('server_scans', 'image_digest', 'TEXT');
 ensureColumn('server_scans', 'completed_at', 'INTEGER');
+// v1.4: the model's main-photo suggestion. A column rather than a key inside
+// raw_json_data, because that blob is parsed straight into `data` and `data` is
+// the 13 AI fields and nothing else. NULL means "no suggestion" — either the
+// extraction has not run yet or the model declined to choose; both are honest
+// absences and neither may default to photo 0.
+ensureColumn('server_scans', 'suggested_key_photo_index', 'INTEGER');
 
 operationalDb.exec(`
   CREATE INDEX IF NOT EXISTS idx_scans_extraction
@@ -77,13 +83,13 @@ const insertStmt = operationalDb.prepare(`
     key_photo_path, image_paths, catalog_image_url, rendering_status,
     render_attempts, render_error, extraction_status, extraction_attempts,
     extraction_error, extraction_fault_code, next_attempt_at, image_digest,
-    created_at, updated_at
+    suggested_key_photo_index, created_at, updated_at
   ) VALUES (
     @apparel_id, @cloned_from, @username, @timestamp, @raw_json_data,
     @key_photo_path, @image_paths, @catalog_image_url, @rendering_status,
     @render_attempts, @render_error, @extraction_status, 0,
     NULL, NULL, NULL, @image_digest,
-    @created_at, @updated_at
+    @suggested_key_photo_index, @created_at, @updated_at
   )
   ON CONFLICT(apparel_id) DO UPDATE SET
     cloned_from       = excluded.cloned_from,
@@ -103,6 +109,9 @@ const insertStmt = operationalDb.prepare(`
     extraction_error    = NULL,
     next_attempt_at     = NULL,
     image_digest        = excluded.image_digest,
+    -- A re-scan replaces the photos, so any suggestion about the old ones is
+    -- stale; the fresh extraction writes a new one.
+    suggested_key_photo_index = excluded.suggested_key_photo_index,
     updated_at          = excluded.updated_at
 `);
 
@@ -155,6 +164,8 @@ export interface UpsertScanInput {
   extraction_status: ExtractionStatus;
   /** SHA-256 over the uploaded photo bytes; null for clones. */
   image_digest?: string | null;
+  /** Inherited by a clone; null for a scan whose extraction has not run yet. */
+  suggested_key_photo_index?: number | null;
 }
 
 export function upsertScan(input: UpsertScanInput): void {
@@ -162,6 +173,7 @@ export function upsertScan(input: UpsertScanInput): void {
   insertStmt.run({
     ...input,
     image_digest: input.image_digest ?? null,
+    suggested_key_photo_index: input.suggested_key_photo_index ?? null,
     render_attempts: 0,
     render_error: null,
     created_at: now,
@@ -222,6 +234,7 @@ const claimExtractionStmt = operationalDb.prepare(`
 const completeExtractionStmt = operationalDb.prepare(`
   UPDATE server_scans
   SET raw_json_data         = @raw_json_data,
+      suggested_key_photo_index = @suggested_key_photo_index,
       extraction_status     = 'COMPLETED',
       extraction_error      = NULL,
       extraction_fault_code = NULL,
@@ -259,10 +272,20 @@ export function claimPendingExtractions(limit: number): ServerScanRow[] {
   return claimExtractionStmt.all({ limit, now: Date.now() }) as ServerScanRow[];
 }
 
-export function completeExtraction(apparelId: string, rawJson: string): void {
+/**
+ * Commits a finished extraction. The main-photo suggestion is written in the
+ * same statement as the payload, so a row can never be READY_TO_CONFIRM with a
+ * suggestion belonging to some earlier attempt.
+ */
+export function completeExtraction(
+  apparelId: string,
+  rawJson: string,
+  suggestedKeyPhotoIndex: number | null = null,
+): void {
   completeExtractionStmt.run({
     apparel_id: apparelId,
     raw_json_data: rawJson,
+    suggested_key_photo_index: suggestedKeyPhotoIndex,
     now: Date.now(),
   });
 }

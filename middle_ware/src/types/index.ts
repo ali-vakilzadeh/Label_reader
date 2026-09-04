@@ -16,6 +16,10 @@ export const EXTRACTED_FIELDS = [
   'sub_category',
   'gender',
   'season',
+  // v1.4: read off a care QR code by the model, so it is AI output and belongs
+  // in `data`. Contrast package_code / set_size, which are operator-entered and
+  // therefore never cross this API at all.
+  'care_info',
 ] as const;
 
 export type ExtractedFieldName = (typeof EXTRACTED_FIELDS)[number];
@@ -26,6 +30,20 @@ export interface ConfidenceField {
 }
 
 export type ExtractedData = Record<ExtractedFieldName, ConfidenceField>;
+
+/**
+ * Armenian labels for `data`, same 13 keys, published as `data_hy`
+ * (api_contract.md v1.4 §4.2, §8.3).
+ *
+ * Plain strings, never `{value, confidence}`: the confidence belongs to the
+ * extraction, not to a table lookup that either found a row or did not.
+ *
+ * **`null` means "no Armenian exists — display the English value from `data`".**
+ * It never means "show nothing". Seven keys are null by design: `brand_name`
+ * and `country_of_origin` (English everywhere by client decision, 2026-08-30)
+ * and the five free-text fields.
+ */
+export type ArmenianData = Record<ExtractedFieldName, string | null>;
 
 /** Raw Gemini payload: weights arrive as an array and are folded into netto/brutto. */
 export interface GeminiRawExtraction {
@@ -39,7 +57,14 @@ export interface GeminiRawExtraction {
   sub_category: ConfidenceField;
   gender: ConfidenceField;
   season: ConfidenceField;
+  care_info: ConfidenceField;
   weights: ConfidenceField[];
+  /**
+   * Which image the model judged to be the main product shot, zero-based.
+   * Negative means "could not choose" — the schema cannot express null, and an
+   * honest refusal is worth more than a confident 0.
+   */
+  key_photo_index: number;
 }
 
 /**
@@ -71,7 +96,17 @@ export interface VisionExtractResponse {
   blocking_fault: string | null;
   /** Short cause, set only for NEEDS_ATTENTION. */
   attention_reason?: string | null;
+  /**
+   * v1.4. Zero-based index of the photo the model judged to be the main product
+   * shot; null until extraction completes and null whenever it could not choose.
+   * Envelope, never inside `data` — it is metadata about the batch of photos,
+   * not an attribute of the garment. The request's `key_photo_index` stays
+   * required and authoritative; this is only a pre-selection.
+   */
+  suggested_key_photo_index: number | null;
   data: ExtractedData | null;
+  /** v1.4. Armenian for `data`; present exactly when `data` is. */
+  data_hy: ArmenianData | null;
 }
 
 export interface VisionResultsBatchResponse {
@@ -113,6 +148,7 @@ export interface ServerScanRow {
   rendering_status: RenderingStatus;
   render_attempts: number;
   render_error: string | null;
+  suggested_key_photo_index: number | null;
   extraction_status: ExtractionStatus;
   extraction_attempts: number;
   extraction_error: string | null;
