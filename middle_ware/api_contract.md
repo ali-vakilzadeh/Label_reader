@@ -1,14 +1,26 @@
 # API Contract Specification
 
-**Version 1.3** · Binding contract between the Android client and the middleware.
-Supersedes v1.2. Changes are listed in [§10](#10-migration-from-v12).
+**Version 1.4** · Binding contract between the Android client and the middleware.
+Supersedes v1.3. Changes are listed in [§10](#10-migration-from-v13).
 
-> **v1.3 adds one endpoint and changes nothing else.**
-> [`GET /api/v1/reference-tables`](#46-reference-tables--get-apiv1reference-tables) serves the
-> client's seven taxonomy tables as English key + Armenian label + numeric id, so the app can
-> show the operator **Armenian** while still storing and sending the canonical **English** key.
-> No request or response shape changes, no existing field changes, and nothing on the wire
-> becomes Armenian. See [§8.3](#83-showing-values-in-armenian).
+> **v1.4 is the first change to the response shape since v1.1.** Three additions, all driven by
+> client decisions of 2026-09-04 (`docs/client_decisions_2026-09-04.md`):
+>
+> 1. **`data` grows from 12 to 13 fields** — `care_info` carries the URL behind a garment's care
+>    QR code ([§8.4](#84-free-text-fields)).
+> 2. **`suggested_key_photo_index`** — the server's suggestion for the main product photo. An
+>    envelope field; the operator still decides ([§4.2](#42-submit-a-scan--post-apiv1visionextract)).
+> 3. **`data_hy`** — the Armenian rendering of every translatable field, so the app never has to
+>    parse or translate ([§8.3](#83-showing-values-in-armenian)).
+>
+> **One existing field changes meaning:** `material` is now the **full composition string**
+> (`80% Cotton 20% Polyester`), not a single fibre name. `size` is now the **European value
+> only**. Both are described in [§8](#8-field-vocabularies).
+>
+> v1.3 added [`GET /api/v1/reference-tables`](#46-reference-tables--get-apiv1reference-tables),
+> serving the client's seven taxonomy tables as English key + Armenian label + numeric id, so the
+> app can show the operator **Armenian** while still storing and sending the canonical **English**
+> key.
 >
 > v1.2 replaced the controlled vocabularies with the client's reference tables: the values sent
 > for `sub_category`, `brand_name`, `country_of_origin`, `material`, `color`, `gender` and
@@ -30,8 +42,9 @@ Supersedes v1.2. Changes are listed in [§10](#10-migration-from-v12).
 7. [Client state machine](#7-client-state-machine)
 8. [Field vocabularies](#8-field-vocabularies)
 9. [Working in Armenian](#9-working-in-armenian)
-10. [Migration from v1.2](#10-migration-from-v12)
-11. [Migration from v1.1](#11-migration-from-v11)
+10. [Migration from v1.3](#10-migration-from-v13)
+11. [Migration from v1.2](#11-migration-from-v12)
+12. [Migration from v1.1](#12-migration-from-v11)
 
 ---
 
@@ -74,6 +87,9 @@ Every response that concerns a scan carries `processing_status`.
 | `PENDING_AI` | Stored; extraction queued or in progress | No — keep polling | `null` |
 | `READY_TO_CONFIRM` | Extraction complete; ready for operator review | **Yes** | Yes |
 | `NEEDS_ATTENTION` | Stored, but cannot be extracted from these images | **Yes** | `null` |
+
+`data_hy` and `suggested_key_photo_index` follow `data` exactly: both are present when `data` is,
+and `null` when it is not. A client that branches on `data != null` needs no new checks.
 
 `NEEDS_ATTENTION` means a person must act — usually re-photograph the item. The record and its
 photos are **never deleted**; the scan is preserved indefinitely for review.
@@ -138,7 +154,7 @@ Stores the scan and returns immediately. **Never blocks on the AI.**
 |---|---|---|---|
 | `apparel_id` | String | **Yes** | Scanned barcode, e.g. `"890123456789"` |
 | `username` | String | **Yes** | Operator ID. Falls back to the JWT's username if omitted |
-| `key_photo_index` | Integer | **Yes** | Zero-based index (0–7) of the main product photo |
+| `key_photo_index` | Integer | **Yes** | Zero-based index (0–7) of the main product photo. **Still required in v1.4** — the operator's choice remains the authority. `suggested_key_photo_index` in the response is a pre-selection, not a replacement |
 | `cloned_from` | String | *Optional* | Parent barcode. If present the server copies the parent record and never calls the AI |
 | `images` | File array | **Conditional** | Up to 8 JPEG/PNG/WebP files, ≤12 MB each. Required unless `cloned_from` is set |
 
@@ -159,7 +175,9 @@ client branches on `processing_status`, never on the status code.
   "estimated_wait_seconds": 60,
   "retry_after_seconds": 60,
   "blocking_fault": null,
-  "data": null
+  "suggested_key_photo_index": null,
+  "data": null,
+  "data_hy": null
 }
 ```
 
@@ -170,7 +188,9 @@ client branches on `processing_status`, never on the status code.
 | `estimated_wait_seconds` | Integer \| null | Estimated time until ready. `null` when processing is paused and no estimate is meaningful |
 | `retry_after_seconds` | Integer | **When to poll next.** Always present; clamped to 5–120 s |
 | `blocking_fault` | String \| null | Set when processing is paused, e.g. `VISION_BILLING_REQUIRED`. Advisory — display as "processing paused, contact supervisor" |
-| `data` | Object \| null | Populated **only** when `processing_status` is `READY_TO_CONFIRM` |
+| `suggested_key_photo_index` | Integer \| null | **v1.4.** Zero-based index of the photo the model judged to be the main product shot. `null` until extraction completes, and `null` whenever the model could not choose. Pre-select it; let the operator override |
+| `data` | Object \| null | Populated **only** when `processing_status` is `READY_TO_CONFIRM`. **13 fields** since v1.4 |
+| `data_hy` | Object \| null | **v1.4.** Armenian labels for `data`, same 13 keys. See [§8.3](#83-showing-values-in-armenian) |
 | `catalog_image_url` | String | Permanent, deterministic. Valid immediately; the image itself is rendered overnight |
 
 #### When `data` arrives in the POST response
@@ -194,25 +214,49 @@ Two cases return `READY_TO_CONFIRM` immediately, because neither needs the AI:
   "estimated_wait_seconds": 0,
   "retry_after_seconds": 5,
   "blocking_fault": null,
+  "suggested_key_photo_index": 2,
   "data": {
-    "brand_name":        { "value": "Nike",         "confidence": 0.95 },
-    "country_of_origin": { "value": "VIETNAM",      "confidence": 0.88 },
-    "size":              { "value": "XL",           "confidence": 0.90 },
-    "color":             { "value": "Black",        "confidence": 0.92 },
-    "material":          { "value": "Polyester",    "confidence": 0.85 },
-    "original_price":    { "value": "$45.00",       "confidence": 0.99 },
-    "netto":             { "value": "240g",         "confidence": 0.80 },
-    "brutto":            { "value": "290g",         "confidence": 0.80 },
-    "category":          { "value": "clothing",     "confidence": 0.90 },
-    "sub_category":      { "value": "Trousers",     "confidence": 0.85 },
-    "gender":            { "value": "Unisex",       "confidence": 0.75 },
-    "season":            { "value": "All Seasons",  "confidence": 0.70 }
+    "brand_name":        { "value": "Nike",                      "confidence": 0.95 },
+    "country_of_origin": { "value": "VIETNAM",                   "confidence": 0.88 },
+    "size":              { "value": "EU 122/128",                "confidence": 0.90 },
+    "color":             { "value": "Black",                     "confidence": 0.92 },
+    "material":          { "value": "80% Cotton 20% Polyester",  "confidence": 0.85 },
+    "original_price":    { "value": "$45.00",                    "confidence": 0.99 },
+    "netto":             { "value": "240g",                      "confidence": 0.80 },
+    "brutto":            { "value": "290g",                      "confidence": 0.80 },
+    "category":          { "value": "clothing",                  "confidence": 0.90 },
+    "sub_category":      { "value": "Trousers",                  "confidence": 0.85 },
+    "gender":            { "value": "Unisex",                    "confidence": 0.75 },
+    "season":            { "value": "All Seasons",               "confidence": 0.70 },
+    "care_info":         { "value": "https://care.nike.com/x7f", "confidence": 0.60 }
+  },
+  "data_hy": {
+    "brand_name":        null,
+    "country_of_origin": null,
+    "size":              null,
+    "color":             "Սև",
+    "material":          "80% Բամբակ, 20% Պոլիեսթեր",
+    "original_price":    null,
+    "netto":             null,
+    "brutto":            null,
+    "category":          "Հագուստ",
+    "sub_category":      "Տաբատ",
+    "gender":            "Ունիսեքս",
+    "season":            "Բոլոր եղանակները",
+    "care_info":         null
   }
 }
 ```
 
-The `data` object always contains all **12 fields**, each as `{ value, confidence }`.
+The `data` object always contains all **13 fields**, each as `{ value, confidence }`.
 An unreadable field is `{ "value": "", "confidence": 0.0 }` — never omitted, never `null`.
+
+`data_hy` always contains the **same 13 keys**. Its values are plain strings or `null`, with no
+confidence — the confidence belongs to the extraction, not to the translation. **`null` means
+"no Armenian exists for this field — display the English value from `data`."** It never means
+"show nothing". Seven keys are `null` by design: `brand_name` and `country_of_origin` (English
+everywhere, including on the paperwork — client decision 2026-08-30), the free-text `size`,
+`original_price`, `netto` and `brutto`, and the URL `care_info`.
 
 ---
 
@@ -238,7 +282,9 @@ including after an app reinstall.
   "retry_after_seconds": 5,
   "blocking_fault": null,
   "attention_reason": null,
-  "data": { "…12 fields…" }
+  "suggested_key_photo_index": 2,
+  "data": { "…13 fields…" },
+  "data_hy": { "…13 keys, string or null…" }
 }
 ```
 
@@ -285,7 +331,7 @@ No authentication. Used for the app's startup connectivity check.
   "status": "ok",
   "uptime_seconds": 142050,
   "version": "1.1.0",
-  "api_contract": "1.3",
+  "api_contract": "1.4",
   "gemini_ready": true,
   "reference_version": "93894da042acfa96"
 }
@@ -488,11 +534,40 @@ The controlled values come from the client's reference tables, which ship with t
 | `sub_category` | 295 | The model transcribes what the label says; the server maps it to the closest table entry |
 | `brand_name` | 839 | same |
 | `country_of_origin` | 222 | same. **UPPERCASE**, e.g. `VIETNAM`, `ITALY` |
-| `material` | 85 | same. A single fibre name, e.g. `Cotton` — not a composition string |
+| `material` | 85 | **Changed in v1.4.** The **full composition string**, e.g. `80% Cotton 20% Polyester`. The 85 entries are the *fibre names*; the server matches each fibre segment individually and keeps the percentages |
 
 These tables are far too long to enumerate here and **will grow**. Do not hardcode them in the
 app. When nothing matches closely enough the server returns the transcription unchanged, so the
 client must accept a value outside the table.
+
+#### `material` in v1.4 — read this if the app parsed it before
+
+v1.2 sent one fibre name and v1.3 kept that. **v1.4 sends the whole composition**, because the
+client needs the complete information on the paperwork:
+
+```
+label reads         100% ALGODÓN / ALGODÃO / COTTON / COTON / COTONE
+server sends        100% Cotton
+
+label reads         80% ALGODON 20% POLIESTER
+server sends        80% Cotton 20% Polyester
+
+shoe, no printed composition
+server sends        Leather                    confidence <= 0.50 (inferred, not read)
+```
+
+Three properties the client can rely on:
+
+1. **One language — English.** A composition printed in six languages is collapsed to one
+   English wording before it is sent. `algodón`, `algodão` and `cotone` all arrive as `Cotton`.
+2. **Invariant fibre names.** The same fibre always arrives spelled the same way, because each
+   segment is matched onto the 85-entry table. This is what keeps the value groupable.
+3. **Percentages preserved, verbatim.** The server never adds, divides or normalises them, and
+   a fibre absent from the table is passed through as transcribed rather than forced onto a
+   near-miss.
+
+**Display it as one string.** The app should not split, re-order or re-percentage it. Its
+Armenian rendering arrives ready-made in `data_hy.material`.
 
 The full lists are in the CSVs above, and in `docs/client_data/` for reference.
 
@@ -516,9 +591,18 @@ add a value to any of them. Prefer the served table for anything the operator se
 
 ### 8.3 Showing values in Armenian
 
-Everything on the wire is English. The Armenian the operator reads is a **lookup**, performed on
-the device against the table from
-[§4.6](#46-reference-tables--get-apiv1reference-tables):
+Everything on the wire is English. The Armenian the operator reads comes from two places, and
+**v1.4 adds the first of them**:
+
+| Armenian for | Comes from | Why |
+|---|---|---|
+| **AI results** — the values in `data` | **`data_hy`**, in the same response (v1.4) | `material` is a composition, not a table key: `80% Cotton 20% Polyester` cannot be looked up in one step. The server already renders compositions per fibre for the legal export, so it renders this one too |
+| **Anything the operator picks or types** — pickers, type-ahead, filters, review-screen dropdowns | Device lookup against [§4.6](#46-reference-tables--get-apiv1reference-tables), cached | The app needs the whole vocabulary offline anyway, and a picker must list terms the AI never returned |
+
+`data_hy` does not replace the reference tables — the app still fetches and caches them. It
+removes the need to *parse* anything.
+
+The lookup, for everything not covered by `data_hy`:
 
 ```
 server sends            app displays              app stores / exports / sends
@@ -545,10 +629,104 @@ The rules, which are the same ones the dashboard follows:
 
 ---
 
+### 8.4 Free-text fields
+
+Four fields belong to no table. They are transcribed, never matched, and never translated —
+their `data_hy` entry is always `null`.
+
+| Field | Rule |
+|---|---|
+| `size` | **European value only** — see below |
+| `original_price` | As printed, including the currency symbol. `€79.90`, `$45.00` |
+| `netto`, `brutto` | As read from the scale display, including the unit. `240g` |
+| `care_info` | A URL, or an empty string — see below |
+
+#### `size` — the European value only (v1.4)
+
+Labels routinely print one size in seven systems. The server reports **only the European one**,
+with the prefix normalised to `EU` whether the label said `EU` or `EUR`:
+
+```
+label     US 6X/7  CA 6-8A  EUR 122/128  CN 130/64  MX 6-8A  AUS 7-8  UK 6-8Y
+sends     EU 122/128
+```
+
+The value after the prefix is transcribed exactly as printed — `122/128` is not simplified,
+split or converted.
+
+**When the label carries no European reference**, the size is reported **as printed**, unchanged
+and without an added prefix. A garment labelled only `XL`, or only `32W x 34L`, arrives as `XL`
+and `32W x 34L`. The rule selects among competing size systems; it does not invent one.
+
+#### `care_info` — the care QR code (v1.4)
+
+Many garments carry a QR code linking to care and usage instructions. When one is visible in the
+photos, the server returns the URL it encodes:
+
+```json
+"care_info": { "value": "https://care.example.com/x7f9", "confidence": 0.60 }
+```
+
+- **No QR code visible** → `{ "value": "", "confidence": 0.0 }`, like any other unreadable field.
+- **Never translated.** `data_hy.care_info` is always `null`.
+- **Treat it as untrusted text.** It is a string the server read off a photograph, not a verified
+  link. Display it and store it; do not follow it automatically or render it as a live link
+  without the operator choosing to open it.
+- **Expect low confidence.** A QR read is more error-prone than a printed word, and a wrong URL
+  cannot be spotted by eye. Values below the highlight threshold are normal here.
+
+The app stores it and exports it as the CSV column `CareInfo`. It is not an operator-entered
+field, though the operator may correct it like any other extracted value.
+
+---
+
+### 8.5 Where each of the 19 ledger columns comes from
+
+The daily CSV (`Mobile_app/csv_export_format.txt`) has **19 columns**. Only 13 of them come from
+this API. This table exists so the Android developer can see, in one place, what to expect from
+the server and what the app must produce itself.
+
+| # | CSV column | Source | API field |
+|---|---|---|---|
+| 1 | `Barcode` | **Device** — scanned or typed at capture | `apparel_id` (request) |
+| 2 | `Brand` | AI | `data.brand_name` |
+| 3 | `Category` | AI | `data.category` |
+| 4 | `SubCategory` | AI | `data.sub_category` |
+| 5 | `Gender` | AI | `data.gender` |
+| 6 | `Season` | AI | `data.season` |
+| 7 | `Size` | AI | `data.size` — EU only ([§8.4](#84-free-text-fields)) |
+| 8 | `Color` | AI | `data.color` |
+| 9 | `Material` | AI | `data.material` — full composition ([§8.1](#81-selected-locally-long-tables)) |
+| 10 | `Country` | AI | `data.country_of_origin` |
+| 11 | `OriginalPrice` | AI | `data.original_price` |
+| 12 | `Netto` | AI | `data.netto` |
+| 13 | `Brutto` | AI | `data.brutto` |
+| 14 | `Timestamp` | **Device** — operator's confirmation time | — |
+| 15 | `Operator` | **Device** — authenticated session | `username` (request) |
+| 16 | `ExportBatch` | **Device** — assigned at export cut-off | — |
+| 17 | `PackageCode` | **Operator** — typed before capture, sticky | **None.** Never crosses this API |
+| 18 | `SetSize` | **Operator** — chosen in the review dialog | **None.** Never crosses this API |
+| 19 | `CareInfo` | AI | `data.care_info` ([§8.4](#84-free-text-fields)) |
+
+**`PackageCode` and `SetSize` are deliberately absent from this contract.** Both are entered by
+the operator, neither is AI output, and the response `data` object is AI output only. They live
+in the device database and the CSV, and nowhere else. The known consequence — a device wiped
+before the daily export loses its package codes — is accepted (client decision, 2026-09-04).
+
+The remaining API field, `catalog_image_url`, is not a CSV column; it is the permanent server-side
+image reference used by the dashboard.
+
+---
+
 ## 9. Working in Armenian
 
 The operator-facing requirement is that AI results are **read** in Armenian and the operator's
-decision is **made** in Armenian. Both are satisfied without any Armenian ever crossing the wire.
+decision is **made** in Armenian.
+
+**v1.4 changes how the first half is delivered, not the principle.** Armenian now does cross the
+wire, in `data_hy` — but only ever as a *label to display*. No Armenian value is stored,
+exported, or sent back to the server, and no English value is ever replaced by one. The English
+key remains the only thing that is written down anywhere.
 
 ### Why the values stay English
 
@@ -588,7 +766,40 @@ or removed.
 
 ---
 
-## 10. Migration from v1.2
+## 10. Migration from v1.3
+
+**This one is not purely additive.** Two existing fields change their content, and the response
+gains three things. Auth, endpoints, status codes, the `202`-always behaviour, the storage
+invariant, polling and the error envelope are all **unchanged**.
+
+### What changed
+
+| Change | Impact on the client |
+|---|---|
+| `data` is **13 fields**, not 12 — `care_info` added | Any code asserting a field count, or iterating a fixed list of 12, must be updated |
+| `data.material` is now a **composition string** | If the app treated it as a table key, stop. Display it as one string |
+| `data.size` is now the **European value only**, prefixed `EU` | No parsing needed; the server has already chosen |
+| `suggested_key_photo_index` added to the envelope | Pre-select this photo. Operator may override |
+| `data_hy` added to the envelope | Use it for the Armenian rendering of AI results |
+| `/health` reports `api_contract: "1.4"` | Informational |
+
+### Client changes required
+
+1. **Add `care_info`** to the local record, the review screen and the CSV export (19th column,
+   header `CareInfo`). Expect an empty string when no QR code was visible, and expect low
+   confidence when one was — see [§8.4](#84-free-text-fields).
+2. **Stop treating `material` as a single fibre.** It is a composition. Do not split it, do not
+   look it up as a key, do not re-order it.
+3. **Render Armenian from `data_hy`,** not from a device-side lookup, for the fields it covers.
+   `null` there means *display the English value* — never a blank.
+4. **Pre-select `suggested_key_photo_index`** in the review UI, and keep sending the operator's
+   `key_photo_index` on submit. The request field is unchanged and still required.
+5. **Nothing else.** A v1.3 client that ignores all three new fields still works, except that it
+   will show a composition where it previously showed one fibre.
+
+---
+
+## 11. Migration from v1.2
 
 **Nothing that exists changes.** v1.3 is purely additive: one new endpoint, two new fields in
 `/health`. A v1.2 client keeps working untouched.
@@ -597,7 +808,7 @@ or removed.
 |---|---|
 | `GET /api/v1/reference-tables` added ([§4.6](#46-reference-tables--get-apiv1reference-tables)) | New. Nothing else calls it |
 | `/health` gains `reference_version` and `api_contract` | Additive fields; existing ones unchanged |
-| Twelve extracted fields | **Unchanged** — same names, same `{ value, confidence }`, same English values |
+| Twelve extracted fields | **Unchanged in v1.3.** (v1.4 makes it thirteen — see [§10](#10-migration-from-v13)) |
 | Endpoints, status codes, `202`-always, storage invariant, polling, errors, auth | **Unchanged** |
 
 ### To add Armenian to the app
@@ -617,7 +828,12 @@ operator an Armenian screen.
 
 ---
 
-## 11. Migration from v1.1
+## 12. Migration from v1.1
+
+> **Historical.** This section records the v1.1 → v1.2 step as it was written at the time. Where
+> it disagrees with [§8](#8-field-vocabularies) or [§10](#10-migration-from-v13), **v1.4 wins** —
+> most importantly on `material`, which v1.2 reduced to a single fibre and v1.4 restored to a
+> full composition. Kept for anyone migrating a very old client.
 
 ### What changed
 
@@ -642,8 +858,8 @@ operator an Armenian screen.
    display; validate on the four short enums only.
 2. **Update the short enum lists** ([§8](#8-field-vocabularies)) wherever they drive dropdowns,
    colour swatches, icons or filters. Values are case-sensitive — `Women`, not `women`.
-3. **Expect `material` to be one fibre**, not a percentage composition. If the app parsed
-   `"80% Cotton 20% Polyester"`, that parsing is no longer needed.
+3. ~~**Expect `material` to be one fibre**, not a percentage composition.~~ **Reversed in v1.4**
+   — `material` is the full composition again. See [§8.1](#81-selected-locally-long-tables).
 4. **Expect `country_of_origin` in uppercase.** Title-case it for display if preferred.
 5. Nothing about auth, polling, `processing_status`, or the storage invariant changed.
 

@@ -312,13 +312,15 @@ visible — the same convention as every other field.
 
 Routing is already settled by §0.2: API `care_info` → CSV `CareInfo` → dashboard `care_info`.
 
-> **Risk worth stating, and a cheaper path.** Gemini is not a QR decoder; it reads QR content
-> with real but imperfect reliability, and a plausible-looking wrong URL is worse than an empty
-> field — it cannot be spotted by eye. Two mitigations, neither of which blocks the decision:
-> cap the confidence so low-confidence links route to the flywheel for review, and note that
-> **ML Kit already decodes QR codes** on the device (it is in the app's supported-format list)
-> and can run against a still image. If accuracy disappoints in testing, decoding on-device is
-> exact and free. Proceeding as decided; raising it so the fallback is on record.
+> **Risk worth stating, and the fallback.** Gemini is not a QR decoder; it reads QR content with
+> real but imperfect reliability, and a plausible-looking wrong URL is worse than an empty field
+> — it cannot be spotted by eye. Mitigation: cap the confidence so low-confidence links route to
+> the flywheel for review.
+>
+> **Client decision, 2026-09-04:** on-device QR reading during the scanning process is a **side
+> option, not a main concern**. The AI does this job. ML Kit already decodes QR codes on the
+> device and could read the link exactly, so the fallback exists if accuracy disappoints in
+> testing — recorded in `Commission_TODO_list.md` under *Deferred by decision*, not planned.
 
 ### 2.4 Suggested key photo (C#5)
 
