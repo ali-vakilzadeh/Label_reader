@@ -1,7 +1,14 @@
 # UI Messaging Protocol
 
-**Version 1.3** · Transport: shared SQLite (`control.db`) · Middleware 1.1.0 · Status: implemented, tested against a live second process
+**Version 1.4** · Transport: shared SQLite (`control.db`) · Middleware 1.1.0 · Status: implemented, tested against a live second process
 
+> **What changed in 1.4:** the dashboard can now send **supervisor decisions about the taxonomy
+> tables** to the middleware — filling in a missing Armenian label, or adding a term the label
+> vocabulary was missing. See [§9.2](#92-reference-data--supervisor-decisions). One new table
+> (`reference_data_requests`), one new published view of state (`reference_data_status`), one new
+> command (`REFERENCE_DATA_RELOAD`) and four `REFERENCE_*` message codes. Nothing existing
+> changed.
+>
 > **What changed in 1.3:** operator account management — the UI can now create, disable and
 > delete the logins used by the Android devices. See
 > [§8](#8-managing-operator-accounts). Two new tables (`app_users_public`, `app_user_requests`)
@@ -31,7 +38,7 @@ SQLite file.
 6. [Sending commands](#6-sending-commands)
 7. [Changing the API key](#7-changing-the-api-key)
 8. [Managing operator accounts](#8-managing-operator-accounts)
-9. [Translations](#9-translations)
+9. [Translations and reference data](#9-translations-and-reference-data)
 10. [Rendering guide](#10-rendering-guide)
 11. [Guarantees](#11-guarantees)
 12. [Reference queries](#12-reference-queries)
@@ -101,11 +108,18 @@ Reads never block the middleware. Poll as often as you like.
 | `message_translations` | UI-owned | Localised text; survives upgrades |
 | `app_users_public` | middleware → UI | **View.** Operator accounts, credentials excluded |
 | `app_user_requests` | UI → middleware | Account changes awaiting validation |
+| `reference_data_status` | middleware → UI | Single row. The vocabulary the fleet is being served |
+| `reference_data_requests` | UI → middleware | Taxonomy changes awaiting validation |
 
 The UI **writes** only `ui_commands`, `vision_settings_pending`, `app_user_requests`,
-`message_translations`, and the `acknowledged_*` columns of `server_events`. Everything else is
-read-only to the UI — and `app_users` should never be read directly; use the
-`app_users_public` view, which cannot expose a password hash.
+`reference_data_requests`, `message_translations`, and the `acknowledged_*` columns of
+`server_events`. Everything else is read-only to the UI — and `app_users` should never be read
+directly; use the `app_users_public` view, which cannot expose a password hash.
+
+**The middleware is the only process that writes `reference_data/*.csv`.** The dashboard reads
+those files freely, but proposes changes through `reference_data_requests` rather than editing
+them. One writer means no torn file and no lost edit, and it is what lets the middleware
+re-read the tables and reprogram the live matcher in the same step.
 
 ---
 
@@ -258,6 +272,10 @@ operators will think they are losing inventory data.
 | `CONFIG_RELOADED` | INFO | – | Settings re-read |
 | `CONFIG_RELOAD_FAILED` | CRIT | ✔ | Reload failed; previous settings active |
 | `DISK_WRITE_FAILED` | CRIT | ✔ | Cannot write to disk |
+| `REFERENCE_DATA_RELOADED` | INFO | – | Reference tables re-read from disk |
+| `REFERENCE_DATA_UPDATED` | INFO | – | A supervisor's taxonomy change was written |
+| `REFERENCE_REQUEST_REJECTED` | WARN | ✔ | A taxonomy change was refused; nothing was written |
+| `REFERENCE_DATA_UNREADABLE` | CRIT | ✔ | Tables could not be re-read; previous ones still in force |
 
 **Never hardcode this table.** Read `message_dictionary` at runtime — an upgrade can add codes,
 and they will render correctly without a UI release.
@@ -278,6 +296,7 @@ VALUES (:command, :payload, unixepoch() * 1000, 'ui:operator_01', 'PENDING');
 | `VISION_SETTINGS_UPDATED` | – | Re-read `.env`, then resume + drain |
 | `FLYWHEEL_DUMPED` | **`{"exported_through_id": N}` required** | Purge up to watermark |
 | `DRAIN_QUEUE_NOW` | – | Drain backlog immediately |
+| `REFERENCE_DATA_RELOAD` | – | Re-read `reference_data/*.csv` and rebuild the matcher ([§9.2](#92-reference-data--supervisor-decisions)) |
 | `PING` | – | Liveness probe → `result_detail = 'pong'` |
 
 ### Lifecycle
@@ -509,7 +528,13 @@ Poll the request row until terminal, then refresh the list.
 
 ---
 
-## 9. Translations
+## 9. Translations and reference data
+
+Two different things, deliberately kept apart. **9.1** is the Armenian for the middleware's own
+status messages. **9.2** is the Armenian for the client's *taxonomy* — garment types, colours,
+materials — which is warehouse data, not UI copy.
+
+### 9.1 Message text
 
 `message_dictionary` is **reseeded at every boot**, so it always describes exactly what the
 running middleware can emit — including codes added by an upgrade.
@@ -534,6 +559,131 @@ WHERE t.code IS NULL;
 
 Resolution order is always `translation → default_text`. A missing translation degrades to
 English; it never renders blank.
+
+---
+
+### 9.2 Reference data — supervisor decisions
+
+The client's seven taxonomy tables live in `middle_ware/reference_data/*.csv` as
+`English · Armenian · id`. The dashboard reads them directly for its own rendering. The
+middleware reads them too, snaps every AI reading onto their English column, and — since
+`api_contract.md` v1.3 — **serves them to the Android fleet**, so an operator can read and choose
+in Armenian while the value that gets stored stays the canonical English key.
+
+That makes the tables shared, live state, and gives the dashboard a job it could not do before:
+when an operator meets a garment type outside the 295, or a row turns out to have no Armenian, a
+supervisor decides the wording **once** and it reaches every handset without an app release.
+
+#### The rule that governs this whole section
+
+> **Additive only. An English key is never renamed and never deleted.**
+
+That key is the join. Stored scans carry it, the dashboard's `*_id` lookups resolve through it,
+and exports already delivered to the client contain it. Renaming `Trousers` would orphan every
+record that already says `Trousers`. So there are exactly two actions:
+
+| Action | Effect | Requires |
+|---|---|---|
+| `SET_ARMENIAN` | Fills in or corrects the Armenian label of an **existing** row | The English key must exist; the table must have an Armenian column |
+| `ADD_ENTRY` | Appends a **new** row | The English key must **not** already exist |
+
+Deleting a wrong entry, or correcting an English spelling, is a hand edit to the CSV plus a
+`REFERENCE_DATA_RELOAD` — a deliberate, reviewable, human act, not something a dashboard button
+can do by accident.
+
+#### Submit
+
+```sql
+INSERT INTO reference_data_requests
+  (action, table_name, english, armenian, entry_id, submitted_at, submitted_by, status)
+VALUES (:action, :table_name, :english, :armenian, :entry_id,
+        unixepoch() * 1000, 'ui:supervisor_01', 'PENDING');
+-- keep last_insert_rowid() to poll
+```
+
+| Column | Notes |
+|---|---|
+| `action` | `SET_ARMENIAN` or `ADD_ENTRY`. Anything else is `REJECTED` |
+| `table_name` | `sub_category` · `brand` · `country` · `material` · `color` · `gender` · `season` |
+| `english` | The canonical key. Required, non-blank, at most 200 characters |
+| `armenian` | Required for `SET_ARMENIAN`; optional for `ADD_ENTRY`, so a row can be added now and translated later |
+| `entry_id` | `ADD_ENTRY` only, and normally `NULL` — the middleware assigns the next id above the client's highest. Supply one only to match a number the client has already issued |
+
+#### Poll the outcome
+
+```sql
+SELECT status, result_detail, resolved_at FROM reference_data_requests WHERE id = :id;
+```
+
+```
+PENDING ──► APPLIED | REJECTED
+```
+
+`result_detail` always says what happened, in words worth showing the supervisor verbatim:
+`sub_category: "Ski trousers" now reads "Դահուկային տաբատ".`
+
+#### What gets rejected, and why
+
+A rejection **writes nothing at all**. A wrong Armenian term on a customs declaration is worse
+than a missing one, so anything the middleware cannot verify comes back with a reason instead of
+being guessed at.
+
+| Refused | Reason |
+|---|---|
+| `SET_ARMENIAN` on `brand` or `country` | Those tables have no Armenian column. The client writes brand and country in English everywhere, including on the paperwork (2026-08-30) |
+| Armenian text containing no Armenian characters | Almost always a paste into the wrong column. **Escape hatch:** for a row with *no* Armenian yet, repeating the English term exactly is accepted, and is how you record "this one stays English" — which is what `Unisex` and `All Seasons` already do |
+| The English word, for a row that **already has** Armenian | Refused. That submission is far more likely a copied cell than a decision, and applying it would discard a translation the client supplied. Un-translating a term deliberately is a hand edit plus a reload |
+| `SET_ARMENIAN` for an English key that does not exist | Use `ADD_ENTRY` |
+| `ADD_ENTRY` for a key that already exists | Use `SET_ARMENIAN` |
+| An `entry_id` already in use | The ids are the client's; a collision is never resolved silently |
+| A label identical to the one already stored | Nothing to do — reported rather than rewriting the file |
+
+#### What happens on success
+
+In one pass, so the fleet and the matcher can never disagree:
+
+1. The CSV is rewritten **atomically** (temp file, then rename), preserving its BOM, line
+   endings, column order and quoting. A timestamped copy of the previous file is kept in
+   `reference_data/.backups/` — the last 20 per table.
+2. Every table is re-read from disk and the fuzzy-matcher indexes are **rebuilt in place**, so
+   the new term is matchable immediately, with no restart.
+3. The constrained-enum lists in the AI prompt are regenerated from the same tables, so a new
+   colour or season is offered to the model on the very next scan.
+4. `reference_data_status.version` changes. Handsets notice on their next `/health` call.
+5. `REFERENCE_DATA_UPDATED` is raised carrying the detail.
+
+If the re-read fails — a CSV corrupted by a concurrent hand edit — the **previous tables stay in
+force**, `REFERENCE_DATA_UNREADABLE` is raised, and the batch stops. Same principle as the API
+key: an unverifiable candidate never takes a working server down.
+
+#### Read what the fleet is being served
+
+```sql
+SELECT version, counts_json, untranslated, loaded_at, updated_at
+FROM reference_data_status WHERE id = 1;
+```
+
+| Column | Meaning |
+|---|---|
+| `version` | 16-hex fingerprint of the vocabulary. Matches `reference_version` in the middleware's `/health` and the endpoint's `ETag` |
+| `counts_json` | Per table: `{"sub_category":{"rows":295,"armenian":295,"bilingual":true}, ...}` |
+| `untranslated` | Bilingual rows that still have no Armenian label — the supervisor's to-do count |
+| `loaded_at` | When the middleware last read the files from disk |
+
+`untranslated` is the number to put in front of a supervisor. It is exactly the gap between what
+operators could be shown in Armenian and what they still see in English.
+
+#### Reload after a hand edit
+
+Editing a CSV on the VPS does not reach the running server on its own:
+
+```sql
+INSERT INTO ui_commands (command, issued_at, issued_by, status)
+VALUES ('REFERENCE_DATA_RELOAD', unixepoch() * 1000, 'ui:supervisor_01', 'PENDING');
+```
+
+`DONE` carries the new version. `FAILED` means the files on disk are not loadable and the
+previous ones are still serving traffic. The server keeps running either way.
 
 ---
 
@@ -573,6 +723,8 @@ This is factually true — see §10.
 | `FLYWHEEL_FULL` / `_NEARLY_FULL` | "Export & purge" | Export, then `FLYWHEEL_DUMPED` + watermark |
 | `QUEUE_PARKED_ITEMS` | "Review parked scans" | UI-side list; no command |
 | `RENDER_JOB_FAILURES` | "View render errors" | UI-side list; no command |
+| `REFERENCE_REQUEST_REJECTED` | "Review submission" | UI-side; show `result_detail` and let the supervisor correct and resubmit |
+| `REFERENCE_DATA_UNREADABLE` | "Reload reference data" | `REFERENCE_DATA_RELOAD` after the CSV is fixed on disk |
 
 ### Don't
 
@@ -600,6 +752,9 @@ This is factually true — see §10.
 - A purge never deletes past the stated watermark.
 - Credentials are validated before adoption; a rejected candidate leaves the working one intact.
 - Writes are atomic — a reader never sees a partial message.
+- A reference-table change is validated before anything is written, and a rejected one leaves the
+  CSV untouched. An English key is never renamed or deleted, so a value already stored on a scan
+  can always still be resolved.
 
 **Not guaranteed**
 
@@ -672,6 +827,28 @@ VALUES ('DISABLE', :username, unixepoch() * 1000, 'ui:admin', 'PENDING');
 -- Poll any account change
 SELECT status, result_detail, resolved_at FROM app_user_requests WHERE id = :id;
 
+-- What vocabulary the fleet is being served
+SELECT version, counts_json, untranslated, loaded_at FROM reference_data_status WHERE id = 1;
+
+-- Give an existing term its Armenian label
+INSERT INTO reference_data_requests
+  (action, table_name, english, armenian, submitted_at, submitted_by, status)
+VALUES ('SET_ARMENIAN', :table_name, :english, :armenian,
+        unixepoch() * 1000, 'ui:supervisor_01', 'PENDING');
+
+-- Add a term the label vocabulary was missing (id assigned by the middleware)
+INSERT INTO reference_data_requests
+  (action, table_name, english, armenian, submitted_at, submitted_by, status)
+VALUES ('ADD_ENTRY', :table_name, :english, :armenian,
+        unixepoch() * 1000, 'ui:supervisor_01', 'PENDING');
+
+-- Poll either of them
+SELECT status, result_detail, resolved_at FROM reference_data_requests WHERE id = :id;
+
+-- Re-read the CSVs after a hand edit on the server
+INSERT INTO ui_commands (command, issued_at, issued_by, status)
+VALUES ('REFERENCE_DATA_RELOAD', unixepoch() * 1000, 'ui:supervisor_01', 'PENDING');
+
 -- Recent history (resolved included)
 SELECT e.code, e.occurrences, e.created_at, e.resolved_at, d.severity
 FROM server_events e JOIN message_dictionary d ON d.code = e.code
@@ -697,6 +874,11 @@ ORDER BY e.id DESC LIMIT 50;
 - [ ] Passwords never stored, logged, or re-displayed by the UI
 - [ ] "Reset password" and "Disable" warn that the operator is signed out immediately
 - [ ] Account-change requests polled until `APPLIED`/`REJECTED`, showing `result_detail`
+- [ ] Reference-table changes submitted through `reference_data_requests`, never by writing the CSV
+- [ ] Taxonomy requests polled until `APPLIED`/`REJECTED`, showing `result_detail` verbatim
+- [ ] `untranslated` from `reference_data_status` surfaced as the supervisor's to-do count
+- [ ] No UI path offers to rename or delete an English key
+- [ ] A CSV edited by hand on the server is followed by `REFERENCE_DATA_RELOAD`
 
 ---
 

@@ -74,31 +74,57 @@ function normalise(input: string): string {
 
 export class FuzzyIndex {
   /** Exact normalised term -> canonical key. */
-  private readonly exact = new Map<string, string>();
+  private exact = new Map<string, string>();
   /** Whitespace/punctuation-stripped term -> canonical key ("viet nam" -> "vietnam"). */
-  private readonly compact = new Map<string, string>();
+  private compact = new Map<string, string>();
   /** Memoised results; label vocabularies repeat heavily in a scanning shift. */
-  private readonly cache = new Map<string, string | null>();
-  private readonly fuse: Fuse<SearchRecord>;
+  private cache = new Map<string, string | null>();
+  private fuse: Fuse<SearchRecord>;
   /** Canonical keys, for exact membership tests. */
-  private readonly keys = new Set<string>();
+  private keys = new Set<string>();
   readonly label: string;
-  readonly size: number;
+  size: number;
 
   constructor(entries: TaxonomyEntry[], label: string) {
     this.label = label;
+    this.fuse = new Fuse<SearchRecord>([], FUSE_OPTIONS);
+    this.size = 0;
+    this.rebuild(entries);
+  }
+
+  /**
+   * Replaces the whole index in place.
+   *
+   * In place matters: the seven indexes are module-level singletons imported by
+   * the extraction pipeline, so swapping the object would leave every importer
+   * pointing at the old tables. Reloading a CSV has to reach code that captured
+   * the reference at import time.
+   *
+   * The memo cache is dropped with the index. Keeping it would let a term the
+   * supervisor just corrected keep resolving to the answer it gave before.
+   */
+  rebuild(entries: TaxonomyEntry[]): void {
+    const exact = new Map<string, string>();
+    const compacted = new Map<string, string>();
+    const keys = new Set<string>();
     const records: SearchRecord[] = [];
+
     for (const entry of entries) {
-      this.keys.add(entry.key);
+      keys.add(entry.key);
       for (const term of [entry.key, ...entry.aliases]) {
         const normalised = normalise(term);
         if (!normalised) continue;
-        if (!this.exact.has(normalised)) this.exact.set(normalised, entry.key);
-        const compacted = compact(normalised);
-        if (compacted && !this.compact.has(compacted)) this.compact.set(compacted, entry.key);
+        if (!exact.has(normalised)) exact.set(normalised, entry.key);
+        const flattened = compact(normalised);
+        if (flattened && !compacted.has(flattened)) compacted.set(flattened, entry.key);
         records.push({ key: entry.key, term: normalised });
       }
     }
+
+    this.exact = exact;
+    this.compact = compacted;
+    this.keys = keys;
+    this.cache = new Map();
     this.fuse = new Fuse(records, FUSE_OPTIONS);
     this.size = entries.length;
   }
@@ -224,11 +250,45 @@ export const CONSTRAINED_FIELDS = {
  * the prompt and is exactly what the matched-field design avoids.
  */
 export const TAXONOMY_KEYS = {
-  category: requireEnum('category').map((e) => e.key).join(', '),
-  color: referenceTables.colors.join(', '),
-  gender: referenceTables.genders.join(', '),
-  season: referenceTables.seasons.join(', '),
-} as const;
+  get category(): string {
+    return requireEnum('category').map((e) => e.key).join(', ');
+  },
+  get color(): string {
+    return referenceTables.colors.join(', ');
+  },
+  get gender(): string {
+    return referenceTables.genders.join(', ');
+  },
+  get season(): string {
+    return referenceTables.seasons.join(', ');
+  },
+};
+
+/**
+ * Rebuilds every index from the reference tables currently in memory.
+ *
+ * Call this after `reloadReferenceTables()` succeeds. The prompt lists for the
+ * four constrained enums are derived from `TAXONOMY_KEYS` at call time, so a
+ * colour or season added by a supervisor reaches both the matcher and the model
+ * without a restart.
+ */
+export function reloadTaxonomyIndexes(): void {
+  subCategoryIndex.rebuild(toEntries(referenceTables.subCategories));
+  brandIndex.rebuild(toEntries(referenceTables.brands));
+  countryIndex.rebuild(toEntries(referenceTables.countries));
+  materialIndex.rebuild(toEntries(referenceTables.materials));
+  colorIndex.rebuild(toEntries(referenceTables.colors));
+  genderIndex.rebuild(toEntries(referenceTables.genders));
+  seasonIndex.rebuild(toEntries(referenceTables.seasons));
+  categoryIndex.rebuild(requireEnum('category'));
+
+  logger.info(
+    'Taxonomy indexes rebuilt — ' +
+      `sub_category:${subCategoryIndex.size} brand:${brandIndex.size} ` +
+      `country:${countryIndex.size} material:${materialIndex.size} ` +
+      `color:${colorIndex.size} gender:${genderIndex.size} season:${seasonIndex.size}`,
+  );
+}
 
 /** Back-compat alias used by the extraction pipeline. */
 export const FIELD_INDEXES: Record<string, FuzzyIndex> = { ...MATCHED_FIELDS };

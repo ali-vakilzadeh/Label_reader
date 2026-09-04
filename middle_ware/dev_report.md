@@ -4,9 +4,9 @@
 **Location:** `/middle_ware`
 **Stack:** Node.js 20 LTS · TypeScript 5.8 · Express 4.21 · better-sqlite3 11 · @google/genai 1.x
 **Status:** Feature-complete against `api_contract.md` and `server_specification.json`, plus a
-durable intake queue, a UI control channel, and a fully asynchronous client protocol
-(`api_contract.md` **v1.2**). Build and typecheck clean; **355 checks pass with no network
-access**. The vision path is verified against the live API with real photos.
+durable intake queue, a UI control channel, a fully asynchronous client protocol
+(`api_contract.md` **v1.3**) and a bilingual reference-table channel. Build and typecheck clean;
+**461 checks pass with no network access**. The vision path is verified against the live API with real photos.
 
 **Companion documents:**
 [`api_contract.md`](api_contract.md) (Android) ·
@@ -42,7 +42,8 @@ access**. The vision path is verified against the live API with real photos.
 22. [Asynchronous client protocol (v1.1)](#22-asynchronous-client-protocol-v11)
 23. [Taxonomy strategy and the client reference tables](#24-taxonomy-strategy-and-the-client-reference-tables)
 24. [Bootstrap operator accounts](#25-bootstrap-operator-accounts)
-25. [Change log](#23-change-log)
+25. [Serving Armenian without translating](#26-serving-armenian-without-translating)
+26. [Change log](#23-change-log)
 
 ---
 
@@ -109,6 +110,7 @@ middle_ware/
 │   │   ├── flywheelService.ts      confidence screening and capture
 │   │   ├── renderService.ts        studio render batch
 │   │   ├── cronService.ts          20:00 scheduler with overlap guard
+│   │   ├── referenceService.ts     bilingual tables: publish, validate, apply
 │   │   ├── exportService.ts        Armenian legal output, bilingual CSV
 │   │   └── storageService.ts       image persistence, deterministic catalog URLs
 │   │
@@ -1077,19 +1079,23 @@ Then `npm run render:now`.
 
 | Command | Checks | Scope | Network |
 | --- | --- | --- | --- |
-| `npm test` | 58 | Every endpoint, both auth paths, cloning, weights, fuzzy snapping, screening, ring buffer, Armenian export | none |
+| `npm test` | 49 | Every endpoint, both auth paths, cloning, weights, fuzzy snapping, screening, ring buffer, Armenian export | none |
 | `npm run test:errors` | 26 | Fault classification against real captured Gemini payloads | none |
-| `npm run test:contract` | 30 | Every SQL statement published to the UI, executed as a second process | none |
-| `npm run test:settings` | 33 | Credential submission/validation/encryption, replay, result recovery | partial |
+| `npm run test:contract` | 47 | Every SQL statement published to the UI, executed as a second process | none |
+| `npm run test:settings` | 34 | Credential submission/validation/encryption, replay, result recovery | partial |
 | `npm run test:durability` | 38 | The zero-data-loss guarantee end to end | yes (degrades to skips) |
 | `npm run test:async` | 68 | api_contract.md v1.1 end to end, deliberately with no API key | none |
 | `npm run test:users` | 46 | Operator accounts, revocation, soft delete, migration | none |
-| `npm run test:taxonomy` | 61 | Two-mode taxonomy, CSV loading, latency at real sizes | none |
+| `npm run test:taxonomy` | 73 | Two-mode taxonomy, CSV loading, latency at real sizes | none |
 | `npm run test:commission` | 49 | Cold start, 10-device load, cross-process exchange, hostile input, restart | none |
-| `npm run test:all` | 355 | typecheck + all seven offline suites | none |
+| `npm run test:reference` | 69 | Bilingual tables, the §4.6 endpoint and its ETag, CSV round-trip fidelity, supervisor requests | none |
+| `npm run test:all` | 461 | typecheck + all nine offline suites (3 network checks skip) | none |
 | `npm run test:live -- <images...>` | — | Real Gemini call, full pipeline, persistence and export report | Gemini |
 | `npx tsx tests/cronCheck.ts` | — | Cron validity, tick reaches the job, failure marking | none |
 | `npm run typecheck` | — | `tsc --noEmit`, strict, **including `tests/`** | none |
+
+Counts above are measured, not estimated; the table had drifted before this pass and was
+re-measured against a full `npm run test:all` run.
 
 Suites that touch the live API degrade to explicit `SKIP` lines when the account's own quota is
 exhausted, and still assert the guarantee that must hold regardless — that nothing was lost.
@@ -1103,6 +1109,13 @@ than inserting 10,000 rows.
 `tests/cronCheck.ts` uses **dynamic imports** deliberately: `env.ts` snapshots `process.env` at
 module load, and static `import` statements hoist above assignments, so overriding the schedule
 requires `await import()`.
+
+`tests/referenceTables.ts` and `tests/contractQueries.ts` are the two suites that can **write to
+`reference_data/`**. Both snapshot every table byte-for-byte on entry and restore it in a
+`finally`, so a failing assertion cannot leave the client's hand-maintained files edited. The
+round-trip check exists for the same reason: the writer rewrites whole files, so parse followed
+by re-serialise must reproduce the original bytes exactly, or every supervisor edit would quietly
+reformat a table.
 
 ---
 
@@ -1875,6 +1888,13 @@ Consequence: `src/services/exportService.ts`, `scripts/convertTranslations.ts` a
 the work can move to the dashboard rather than be rewritten. The 12 smoke checks that covered
 Armenian export were removed with them.
 
+> **Amended 2026-09-04.** The row "Armenian text — middleware: not used" is now too strong. The
+> middleware still **stores and emits English only** in scan data, which is the part that
+> mattered. But it now *serves* the Armenian column to the Android fleet, because the app needs
+> the same lookup table the dashboard has in order to show an operator Armenian. Reading a column
+> out of the client's CSV and handing it over verbatim is not "using Armenian" in the sense that
+> decision was protecting. See [§26](#26-serving-armenian-without-translating).
+
 ### 24.7 Wire-contract impact — open
 
 The client tables changed the values the device receives:
@@ -1887,8 +1907,10 @@ The client tables changed the values the device receives:
 | `sub_category` | 14 keys | 295 entries |
 | `category` | 3 keys | unchanged — no client table exists, so the original enum is kept |
 
-`api_contract.md` has **not** been changed, because the Android client is being built against
-v1.1 right now. This needs a coordinated decision before the next app release.
+This was resolved in `api_contract.md` **v1.2**, which adopted the client tables as the wire
+vocabulary, and extended in **v1.3**, which added the reference-table endpoint
+([§26](#26-serving-armenian-without-translating)). Both were coordinated with the Android
+developer.
 
 ---
 
@@ -1916,7 +1938,171 @@ three log in, and a wrong password is refused.
 
 ---
 
+## 26. Serving Armenian without translating
+
+Client requirement, 2026-09-04: **the operator must read every AI result in Armenian, and record
+their decision in Armenian.**
+
+### 26.1 Why not simply translate
+
+The obvious implementations are all wrong, and it is worth writing down why, because they will
+be proposed again:
+
+| Approach | Why it fails |
+|---|---|
+| Ask Gemini to answer in Armenian | The model produces a different wording of the same term on different scans — `տաբատ`, `Տաբատ`, `շալվար` for one garment. Those become separate values in the ledger, and no filter, grouping or invoice total can put them back together. The labels are not in Armenian anyway, so the model would be translating, not reading |
+| Translate the English result at runtime | Same variance, one layer later, plus a translation call on every scan |
+| Store Armenian, join back to English | Inverts the problem: the free-text side becomes the key |
+
+The variance is the whole issue. It is not a quality problem that better prompting fixes — it is
+that free-form text has no canonical form, and a warehouse ledger needs one.
+
+### 26.2 What was actually needed
+
+Nothing about the extraction had to change. The pipeline already reduces every translatable field
+to an exact entry in the client's own tables ([§24](#24-taxonomy-strategy-and-the-client-reference-tables)),
+and those tables already carry the client's Armenian:
+
+| Field | Snapped to a table? | Armenian available |
+|---|---|---|
+| `sub_category`, `material` | yes, 295 / 85 entries | yes |
+| `color`, `gender`, `season` | yes, model picks from the list | yes |
+| `category` | yes, three values | yes, via the dashboard's `category.csv` |
+| `brand_name`, `country_of_origin` | yes, 839 / 222 entries | **no, by client decision** — English on the paperwork too |
+| `size`, `original_price`, `netto`, `brutto` | no | not translatable — free text and numbers |
+
+An audit of the five bilingual tables found **no row with a missing Armenian cell**. The concern
+that "some items may not be there" turned out to be a *taxonomy* gap, not a translation gap: a
+label naming a garment outside the 295. That gap exists identically in English, and the existing
+rule already handles it — the matcher keeps the transcription verbatim and the dashboard queues
+it as `UNMATCHED`.
+
+So the requirement is met by a **lookup on the device**, and the only thing missing was giving
+the device the table.
+
+### 26.3 What was built
+
+```
+reference_data/*.csv            the client's tables, English | Armenian | id
+        │
+        ├── referenceTables.ts  loads all three columns, fingerprints the content
+        │        │
+        │        ├── English column ──► fuzzyMatcher ──► extraction (unchanged)
+        │        │
+        │        └── all columns ─────► GET /api/v1/reference-tables ──► Android app
+        │                                                                    │
+        │                                          displays Armenian, stores English
+        │
+        └── written ONLY by this server, on a validated request from the dashboard
+```
+
+**`GET /api/v1/reference-tables`** (`api_contract.md` v1.3 §4.6) publishes all seven tables as
+`{en, hy, id}`, ETagged on a content fingerprint. A handset that is current gets a `304`; the
+full payload is about 60 KB. `/health` carries the same fingerprint as `reference_version`, so a
+device can detect staleness without authenticating.
+
+**The wire stays English.** A smoke check asserts that no Armenian character appears anywhere in
+a normalised extraction or in the system instruction. Serving the table must never become
+emitting Armenian in `data`.
+
+**Supervisor decisions** arrive from the dashboard through `reference_data_requests` in
+`control.db` (`UI_messaging_protocol.md` v1.4 §9.2). The middleware validates them, and is the
+only process that writes the CSVs — one writer, no torn files, no lost edits.
+
+### 26.4 The rules the writer enforces
+
+**Additive only: an English key is never renamed and never deleted.** That key is the join. It is
+in every stored scan, every `*_id` lookup the dashboard performs, and every export already
+delivered. Renaming `Trousers` would orphan every record that says `Trousers`. Only two actions
+exist — `SET_ARMENIAN` on an existing row, and `ADD_ENTRY` for a new one. Anything destructive is
+a hand edit plus `REFERENCE_DATA_RELOAD`: visible, reviewable, and impossible to do by accident
+from a UI button.
+
+**A rejection writes nothing.** Same principle as credential validation: a wrong Armenian term on
+a customs declaration is worse than a missing one, so an unverifiable submission is reported with
+a reason rather than guessed at. Refused: Armenian for `brand`/`country` (no column, by client
+decision), Latin text in the Armenian column, a `SET_ARMENIAN` for a key that does not exist, an
+`ADD_ENTRY` for one that does, and a colliding id.
+
+**The "stays English" escape hatch is narrow.** Repeating the English term exactly records that a
+term is not translated — which is what `Unisex` and `All Seasons` already do. It is accepted only
+for a row that has *no* Armenian yet. Sending the English word for a row that already reads
+`Հուդի` is refused, because a copied cell is a far likelier explanation than a decision to
+discard the client's translation. This was found by the contract test, which caught the first
+implementation overwriting `Հուդի` with `Hoodie`.
+
+**Writes are atomic and backed up.** Temp file then rename, preserving BOM, line endings, column
+order and quoting; the previous file is kept under `reference_data/.backups/` (last 20 per
+table). A test asserts every one of the seven files round-trips **byte-identically** through
+parse and re-serialise — without that, every supervisor edit would silently reformat a table the
+client maintains by hand.
+
+**A reload that fails leaves the previous tables in force**, raises `REFERENCE_DATA_UNREADABLE`,
+and does not stop the server. Extraction keeps running on the vocabulary it already has.
+
+### 26.5 Live reprogramming
+
+Applying a change re-reads the CSVs and rebuilds the matcher indexes **in place** — the indexes
+are module-level singletons captured at import time by the extraction path, so swapping the
+objects would leave that path on the old tables. `FuzzyIndex.rebuild()` replaces the internals
+and drops the memo cache, which otherwise would keep resolving a term the supervisor just
+corrected to the answer it gave before.
+
+The prompt is rebuilt too. `SYSTEM_INSTRUCTION` and `EXTRACTION_SCHEMA` used to be
+module-level constants, so a colour added at 10am would not have been offered to the model until
+the next restart. They are now `buildSystemInstruction()` and `buildExtractionSchema()`, called
+per request and generated from the same tables. A supervisor's new colour reaches the model on
+the very next scan.
+
+### 26.6 Division of labour, restated
+
+| Concern | Middleware | Dashboard | Android app |
+|---|---|---|---|
+| Canonical English values | **owns** | reads | reads, stores, exports |
+| Armenian text | **serves** from the CSVs | **owns** the decision | **displays** |
+| Numeric taxonomy ids | serves | **owns** | may key on |
+| Writing `reference_data/*.csv` | **only writer** | proposes | never |
+| Customs codes | not involved | **owns** | never |
+
+---
+
 ## 23. Change log
+
+### v1.3 — Armenian for the operator, English on the wire
+
+**api_contract.md v1.3** (additive; a v1.2 client is unaffected)
+- `GET /api/v1/reference-tables` serves the seven client tables as `{en, hy, id}`, ETagged on a
+  content fingerprint. `304` for a current device; about 60 KB otherwise.
+- `/health` gains `reference_version` and `api_contract`, so a device can detect a stale
+  vocabulary without authenticating.
+- New §9 states the language split and the picker rule; new §8.3 states the display rule.
+- No existing field, shape, status code or endpoint changed.
+
+**UI_messaging_protocol.md v1.4**
+- `reference_data_requests`: the dashboard proposes `SET_ARMENIAN` / `ADD_ENTRY`; the middleware
+  validates and is the only process that writes the CSVs.
+- `reference_data_status`: the live version, per-table counts, and the `untranslated` to-do count.
+- `REFERENCE_DATA_RELOAD` command, for a CSV edited by hand on the server.
+- Four `REFERENCE_*` message codes and a `REFERENCE` category.
+
+**Middleware**
+- `referenceTables.ts` loads all three columns and fingerprints the content; `referenceService.ts`
+  publishes, validates and applies. Writes are atomic with backups under `.backups/`.
+- **Additive only** — no rename, no delete. The English key is the join everything downstream
+  depends on.
+- `FuzzyIndex.rebuild()` reprograms the matcher in place, so a new term is matchable with no
+  restart, and the memo cache is dropped with it.
+- `SYSTEM_INSTRUCTION` / `EXTRACTION_SCHEMA` became `buildSystemInstruction()` /
+  `buildExtractionSchema()`, generated per request, so a supervisor's new colour reaches the model
+  on the next scan instead of after a restart.
+- The wire stays English: a check asserts no Armenian character appears in a normalised
+  extraction or in the system instruction.
+
+**Two defects caught while building**
+- The version-fingerprint separator was a `const` declared after the module-level call that used
+  it — a temporal-dead-zone crash **at boot**, invisible to `tsc`. Found by running the loader.
+- The "stays English" escape hatch let the English word overwrite Armenian the client had already
+  supplied. Found by the contract test; now refused unless the row has no Armenian yet.
 
 ### v1.1 — asynchronous client protocol
 

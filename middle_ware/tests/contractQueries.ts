@@ -6,6 +6,7 @@
  * Usage: npx tsx tests/contractQueries.ts
  */
 import Database from 'better-sqlite3';
+import fs from 'node:fs';
 import path from 'node:path';
 
 let passed = 0;
@@ -27,6 +28,29 @@ async function main(): Promise<void> {
   await import('../src/db/controlDb');
   const { startControlService } = await import('../src/services/controlService');
   startControlService();
+
+  // This suite exercises the taxonomy channel, which can write reference_data/.
+  // Every request it sends is one that must be refused, but the files are
+  // snapshotted anyway — a regression here must not leave the client's tables
+  // edited.
+  const referenceModule = await import('../src/data/referenceTables');
+  const referenceSnapshots = new Map<string, Buffer>();
+  for (const table of referenceModule.REFERENCE_TABLE_NAMES) {
+    const file = path.join(
+      referenceModule.REFERENCE_DIR,
+      referenceModule.REFERENCE_FILES[table].file,
+    );
+    referenceSnapshots.set(file, fs.readFileSync(file));
+  }
+  const restoreReferenceData = (): void => {
+    for (const [file, bytes] of referenceSnapshots) {
+      if (!fs.readFileSync(file).equals(bytes)) fs.writeFileSync(file, bytes);
+    }
+    fs.rmSync(path.join(referenceModule.REFERENCE_DIR, '.backups'), {
+      recursive: true,
+      force: true,
+    });
+  };
 
   const uiDb = new Database(path.join(env.dataDir, 'control.db'));
   uiDb.pragma('journal_mode = WAL');
@@ -199,6 +223,84 @@ async function main(): Promise<void> {
     .all();
   check('prioritised query executes', Array.isArray(prioritised));
 
+  console.log('\n== UIMP \u00a79.2 reference_data_status is published ==');
+  const refStatus = uiDb
+    .prepare('SELECT * FROM reference_data_status WHERE id = 1')
+    .get() as Record<string, unknown> | undefined;
+  check('reference status row readable', refStatus !== undefined);
+  for (const column of ['version', 'counts_json', 'untranslated', 'loaded_at', 'updated_at']) {
+    check(
+      `documented column "${column}" exists`,
+      refStatus !== undefined && column in refStatus,
+      refStatus === undefined ? 'no row' : Object.keys(refStatus),
+    );
+  }
+  check(
+    'version matches what the middleware serves',
+    refStatus?.version === (await import('../src/data/referenceTables')).referenceVersion(),
+    refStatus?.version,
+  );
+  let counts: Record<string, { rows: number; armenian: number; bilingual: boolean }> = {};
+  try {
+    counts = JSON.parse(String(refStatus?.counts_json ?? '{}'));
+  } catch {
+    /* reported by the check below */
+  }
+  check('counts_json parses and covers all seven tables',
+    Object.keys(counts).length === 7, Object.keys(counts));
+  check('counts_json reports sub_category rows', counts.sub_category?.rows === 295,
+    counts.sub_category);
+  check('brand is published as English-only', counts.brand?.bilingual === false, counts.brand);
+
+  console.log('\n== UIMP \u00a79.2 a taxonomy request round-trips ==');
+  // Submitted exactly as the doc tells a UI developer to submit it.
+  const reqId = Number(
+    uiDb
+      .prepare(
+        `INSERT INTO reference_data_requests
+           (action, table_name, english, armenian, entry_id, submitted_at, submitted_by, status)
+         VALUES ('SET_ARMENIAN', 'sub_category', 'Hoodie', 'Hoodie', NULL, ?, 'ui:contract_test', 'PENDING')`,
+      )
+      .run(Date.now()).lastInsertRowid,
+  );
+  const { processPendingReferenceRequests } = await import('../src/services/controlService');
+  processPendingReferenceRequests();
+  const resolved = uiDb
+    .prepare('SELECT status, result_detail, resolved_at FROM reference_data_requests WHERE id = ?')
+    .get(reqId) as { status: string; result_detail: string | null; resolved_at: number | null };
+  // "Hoodie" for "Hoodie" is the documented "stays English" form, but the table
+  // already has real Armenian for it, so this must come back REJECTED with a
+  // reason rather than overwriting the client's word.
+  check('request reaches a terminal status', resolved.status !== 'PENDING', resolved);
+  check('the English word is refused for an already-translated row',
+    resolved.status === 'REJECTED', resolved);
+  check('the rejection carries a readable reason', Boolean(resolved.result_detail), resolved);
+  check('resolved_at is stamped', resolved.resolved_at !== null, resolved);
+
+  // The point of the check above: a supervisor copying the English cell must not
+  // be able to discard Armenian the client supplied. Nothing was written.
+  const hoodie = (await import('../src/data/referenceTables'))
+    .referenceEntries('sub_category')
+    .find((entry) => entry.en === 'Hoodie');
+  check('the client\u2019s Armenian for Hoodie is intact',
+    hoodie?.hy === '\u0540\u0578\u0582\u0564\u056B', hoodie);
+
+  console.log('\n== UIMP \u00a79.2 REFERENCE_DATA_RELOAD ==');
+  const reloadId = Number(
+    uiDb
+      .prepare(
+        `INSERT INTO ui_commands (command, payload_json, issued_at, issued_by, status)
+         VALUES ('REFERENCE_DATA_RELOAD', NULL, ?, 'ui:contract_test', 'PENDING')`,
+      )
+      .run(Date.now()).lastInsertRowid,
+  );
+  processPendingCommands();
+  const reloadRow = uiDb
+    .prepare('SELECT status, result_detail FROM ui_commands WHERE id = ?')
+    .get(reloadId) as { status: string; result_detail: string | null };
+  check('reload command completes', reloadRow.status === 'DONE', reloadRow);
+  check('reload reports the version', /version/i.test(reloadRow.result_detail ?? ''), reloadRow);
+
   console.log('\n== concurrent write from both processes ==');
   const { raiseEvent } = await import('../src/db/controlDb');
   let concurrentOk = true;
@@ -219,6 +321,7 @@ async function main(): Promise<void> {
   check('interleaved writes from both sides succeed', concurrentOk);
 
   uiDb.close();
+  restoreReferenceData();
   console.log(`\n${passed} passed, ${failed} failed`);
   process.exit(failed === 0 ? 0 : 1);
 }

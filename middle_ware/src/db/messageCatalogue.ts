@@ -21,7 +21,8 @@ export type MessageCategory =
   | 'RENDER'
   | 'QUEUE'
   | 'SYSTEM'
-  | 'USERS';
+  | 'USERS'
+  | 'REFERENCE';
 
 export interface CatalogueEntry {
   code: string;
@@ -332,6 +333,42 @@ export const MESSAGE_CATALOGUE: CatalogueEntry[] = [
     defaultText: 'Some catalog images could not be rendered.',
     operatorHint: 'Extraction and records are unaffected. Check the render errors in the dashboard.',
   },
+  // -------------------------------------------------------------- REFERENCE
+  {
+    code: 'REFERENCE_DATA_RELOADED',
+    severity: 'INFO',
+    category: 'REFERENCE',
+    requiresAction: false,
+    defaultText: 'Reference tables were re-read from disk.',
+    operatorHint: 'Devices pick the new vocabulary up on their next sync.',
+  },
+  {
+    code: 'REFERENCE_DATA_UPDATED',
+    severity: 'INFO',
+    category: 'REFERENCE',
+    requiresAction: false,
+    defaultText: 'A reference table was updated from the dashboard.',
+    operatorHint:
+      'The change is written to the CSV and served to the fleet. Handsets refresh within a shift.',
+  },
+  {
+    code: 'REFERENCE_REQUEST_REJECTED',
+    severity: 'WARNING',
+    category: 'REFERENCE',
+    requiresAction: true,
+    defaultText: 'A reference-table change was refused.',
+    operatorHint:
+      'Nothing was written. Read result_detail on the request row — it names the reason.',
+  },
+  {
+    code: 'REFERENCE_DATA_UNREADABLE',
+    severity: 'CRITICAL',
+    category: 'REFERENCE',
+    requiresAction: true,
+    defaultText: 'Reference tables could not be re-read; the previous ones are still in force.',
+    operatorHint:
+      'Extraction and scanning are unaffected. Fix the CSV on disk, then reload the reference data.',
+  },
   {
     code: 'RENDER_BILLING_REQUIRED',
     severity: 'WARNING',
@@ -353,6 +390,8 @@ export const UI_COMMANDS = {
   FLYWHEEL_DUMPED: 'FLYWHEEL_DUMPED',
   /** Drain the extraction backlog now rather than waiting for the next sweep. */
   DRAIN_QUEUE_NOW: 'DRAIN_QUEUE_NOW',
+  /** Re-read reference_data/*.csv from disk and rebuild the taxonomy indexes. */
+  REFERENCE_DATA_RELOAD: 'REFERENCE_DATA_RELOAD',
   /** Liveness probe: middleware answers by completing the command. */
   PING: 'PING',
 } as const;

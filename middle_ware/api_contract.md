@@ -1,12 +1,18 @@
 # API Contract Specification
 
-**Version 1.2** · Binding contract between the Android client and the middleware.
-Supersedes v1.1. Changes are listed in [§9](#9-migration-from-v11).
+**Version 1.3** · Binding contract between the Android client and the middleware.
+Supersedes v1.2. Changes are listed in [§10](#10-migration-from-v12).
 
-> **v1.2 replaces the controlled vocabularies** with the client's reference tables. The values
-> the server sends for `sub_category`, `brand_name`, `country_of_origin`, `material`, `color`,
-> `gender` and `season` have changed — see [§8](#8-field-vocabularies) and
-> [§9](#9-migration-from-v11). Request and response *shapes* are unchanged.
+> **v1.3 adds one endpoint and changes nothing else.**
+> [`GET /api/v1/reference-tables`](#46-reference-tables--get-apiv1reference-tables) serves the
+> client's seven taxonomy tables as English key + Armenian label + numeric id, so the app can
+> show the operator **Armenian** while still storing and sending the canonical **English** key.
+> No request or response shape changes, no existing field changes, and nothing on the wire
+> becomes Armenian. See [§8.3](#83-showing-values-in-armenian).
+>
+> v1.2 replaced the controlled vocabularies with the client's reference tables: the values sent
+> for `sub_category`, `brand_name`, `country_of_origin`, `material`, `color`, `gender` and
+> `season` changed — see [§8](#8-field-vocabularies).
 >
 > v1.1 made extraction fully asynchronous: `POST /vision/extract` stores the scan, answers
 > `202` immediately, and the client polls for the result.
@@ -23,7 +29,9 @@ Supersedes v1.1. Changes are listed in [§9](#9-migration-from-v11).
 6. [Error responses](#6-error-responses)
 7. [Client state machine](#7-client-state-machine)
 8. [Field vocabularies](#8-field-vocabularies)
-9. [Migration from v1.1](#9-migration-from-v11)
+9. [Working in Armenian](#9-working-in-armenian)
+10. [Migration from v1.2](#10-migration-from-v12)
+11. [Migration from v1.1](#11-migration-from-v11)
 
 ---
 
@@ -277,12 +285,89 @@ No authentication. Used for the app's startup connectivity check.
   "status": "ok",
   "uptime_seconds": 142050,
   "version": "1.1.0",
-  "gemini_ready": true
+  "api_contract": "1.3",
+  "gemini_ready": true,
+  "reference_version": "93894da042acfa96"
 }
 ```
 
 `gemini_ready: false` means the AI is not currently usable. **Scans are still accepted and
 stored** — the app should not block scanning on this flag; it is for display only.
+
+`reference_version` is the fingerprint of the vocabulary the server is currently serving. It is
+the cheapest way for the app to notice a supervisor changed a table: compare it with the version
+stored alongside the cached copy, and only call
+[§4.6](#46-reference-tables--get-apiv1reference-tables) when they differ. This call needs no
+authentication, so it works before login.
+
+---
+
+### 4.6 Reference tables — `GET /api/v1/reference-tables`
+
+The client's seven taxonomy tables: the canonical **English** key, the client's **Armenian**
+label, and the client's **numeric id**. This is what lets an operator work in Armenian without
+anything being translated at runtime — see [§9](#9-working-in-armenian).
+
+**Headers:** `Authorization: Bearer <JWT_TOKEN>`, and `If-None-Match: "<version>"` when the app
+already holds a copy.
+
+**Response `200 OK`:**
+
+```json
+{
+  "status": "success",
+  "version": "93894da042acfa96",
+  "generated_at": "2026-09-04T05:19:13Z",
+  "tables": {
+    "sub_category": {
+      "bilingual": true,
+      "entries": [
+        { "en": "Hoodie",   "hy": "Հուդի",  "id": 18 },
+        { "en": "Trousers", "hy": "Տաբատ",  "id": 88 }
+      ]
+    },
+    "brand": {
+      "bilingual": false,
+      "entries": [
+        { "en": "Nike", "hy": null, "id": 512 }
+      ]
+    },
+    "country":  { "bilingual": false, "entries": ["…"] },
+    "material": { "bilingual": true,  "entries": ["…"] },
+    "color":    { "bilingual": true,  "entries": ["…"] },
+    "gender":   { "bilingual": true,  "entries": ["…"] },
+    "season":   { "bilingual": true,  "entries": ["…"] }
+  }
+}
+```
+
+| Field | Type | Notes |
+|---|---|---|
+| `version` | String | Content fingerprint. Also the `ETag`, and also `reference_version` in `/health` |
+| `generated_at` | String | When the server last read the tables from disk |
+| `tables.<name>.bilingual` | Boolean | `false` for `brand` and `country` — the client writes both in English everywhere, **including on the paperwork**. Their `hy` is always `null`, by design |
+| `entries[].en` | String | **The canonical key.** The only value the app ever stores, exports, or sends back |
+| `entries[].hy` | String \| null | The Armenian label to display. `null` means show the English word |
+| `entries[].id` | Integer \| null | The client's own id, stable across versions. Use it as the key when remembering a selection |
+
+**Response `304 Not Modified`** when `If-None-Match` matches the current version. No body. This
+is the normal case, so the call is cheap enough to make at every login.
+
+The full payload is roughly 60 KB, and 1,479 entries across the seven tables.
+
+#### How the app should use it
+
+1. **Fetch at login**, sending `If-None-Match` with the cached version. On `304`, keep what you
+   have. On `200`, replace the whole cached copy and store the new `version`.
+2. **Never ship a hardcoded copy.** These tables grow, and a supervisor can add a row mid-shift.
+3. **Cache it on the device** and keep working from the cache when the server is unreachable.
+   A stale vocabulary is not an error — the operator can still scan and confirm.
+4. **Key everything on `en`.** Display `hy`; store, export and transmit `en`.
+
+`brand`, `country`, `material` and `sub_category` may still contain a value that is **not** in
+any table, because the server returns the label's transcription unchanged when nothing matches
+([§8](#8-field-vocabularies)). Treat all four as free text for storage, and use the table only
+to drive the picker.
 
 ---
 
@@ -396,7 +481,7 @@ server retains its own copies regardless.
 The controlled values come from the client's reference tables, which ship with the server in
 `middle_ware/reference_data/*.csv`. Two kinds of field:
 
-### Selected locally (long tables)
+### 8.1 Selected locally (long tables)
 
 | Field | Entries | How the value is produced |
 |---|---|---|
@@ -411,7 +496,7 @@ client must accept a value outside the table.
 
 The full lists are in the CSVs above, and in `docs/client_data/` for reference.
 
-### Chosen by the model (short enums)
+### 8.2 Chosen by the model (short enums)
 
 These are fixed and safe to hardcode for display:
 
@@ -425,7 +510,114 @@ These are fixed and safe to hardcode for display:
 
 Values are case-sensitive and are sent exactly as listed.
 
-## 9. Migration from v1.1
+**These four are safe to hardcode for *validation*, but not for *display*** — their Armenian
+labels come from [§4.6](#46-reference-tables--get-apiv1reference-tables), and a supervisor can
+add a value to any of them. Prefer the served table for anything the operator sees.
+
+### 8.3 Showing values in Armenian
+
+Everything on the wire is English. The Armenian the operator reads is a **lookup**, performed on
+the device against the table from
+[§4.6](#46-reference-tables--get-apiv1reference-tables):
+
+```
+server sends            app displays              app stores / exports / sends
+"Trousers"       ──►    "Տաբատ"            ──►    "Trousers"
+"Blue - Navy"    ──►    "Կապույտ - Մուգ"   ──►    "Blue - Navy"
+"Nike"           ──►    "Nike"             ──►    "Nike"     (brand: English by decision)
+"Chartreuse"     ──►    "Chartreuse" ⚠     ──►    "Chartreuse"  (not in the table)
+```
+
+The rules, which are the same ones the dashboard follows:
+
+1. **Never translate. Look up, or show the English word.** No machine translation, no
+   transliteration, and never a blank cell. A term with no Armenian renders in English — that is
+   correct behaviour, not a bug.
+2. **`brand` and `country` display in English even in Armenian mode.** The client writes both in
+   English everywhere including the paperwork (their decision, 2026-08-30). Their `hy` is `null`
+   and no Armenian column will be added.
+3. **`size` and `original_price` are never translated in either direction.** They are free text.
+4. **Store the English key, always.** The CSV ledger, the API and the local database stay
+   English. This is what keeps a value searchable and groupable: one garment type is one string,
+   not five spellings of it.
+5. **A value outside the table** still displays, marked as unmatched, and is stored verbatim.
+   Do not force it onto the nearest entry.
+
+---
+
+## 9. Working in Armenian
+
+The operator-facing requirement is that AI results are **read** in Armenian and the operator's
+decision is **made** in Armenian. Both are satisfied without any Armenian ever crossing the wire.
+
+### Why the values stay English
+
+Asking the model to answer in Armenian, or translating its answer at runtime, produces a
+different wording of the same term on different scans — `տաբատ`, `Տաբատ`, `շալվար` for one
+garment. Those variants are stored, exported and reported as if they were different things,
+which makes the ledger impossible to group, filter or total. One canonical English key with one
+Armenian label attached to it is what makes Armenian reporting possible at all.
+
+So the split is:
+
+| Concern | Language | Where it lives |
+|---|---|---|
+| Extraction, storage, transport, CSV export | **English** | This contract |
+| What the operator reads and picks from | **Armenian** | Device lookup, [§4.6](#46-reference-tables--get-apiv1reference-tables) |
+| Legal and invoice output | **Armenian** | Dashboard, joined on the numeric id |
+
+### Operator input
+
+Selectors for `category`, `sub_category`, `gender`, `season`, `color` and `material` should be
+**searchable pickers over the Armenian labels**, not free-text boxes. The operator searches and
+reads Armenian; the app writes the English key behind it. This is the single most effective
+thing the app can do to keep the data groupable, because it removes the opportunity to type a
+variant spelling at all.
+
+Where the operator must still type — a garment type genuinely absent from the 295 — store what
+they typed, verbatim, and let it flow through as an unmatched value. The dashboard's review
+queue picks it up, a supervisor decides the canonical English and Armenian for it, and it
+appears in the next version of the table. Nothing is silently corrected on the device.
+
+### When a table changes
+
+A supervisor adding a term through the dashboard changes `version`. The app notices on its next
+`/health` or `/api/v1/reference-tables` call and refreshes. No app release is involved, and
+scans taken against the older vocabulary remain valid — the keys they carry are never renamed
+or removed.
+
+---
+
+## 10. Migration from v1.2
+
+**Nothing that exists changes.** v1.3 is purely additive: one new endpoint, two new fields in
+`/health`. A v1.2 client keeps working untouched.
+
+| Change | Impact |
+|---|---|
+| `GET /api/v1/reference-tables` added ([§4.6](#46-reference-tables--get-apiv1reference-tables)) | New. Nothing else calls it |
+| `/health` gains `reference_version` and `api_contract` | Additive fields; existing ones unchanged |
+| Twelve extracted fields | **Unchanged** — same names, same `{ value, confidence }`, same English values |
+| Endpoints, status codes, `202`-always, storage invariant, polling, errors, auth | **Unchanged** |
+
+### To add Armenian to the app
+
+1. Fetch and cache [§4.6](#46-reference-tables--get-apiv1reference-tables) at login, keyed by
+   `version`, with `If-None-Match`.
+2. Add an **AM / EN** toggle. It changes only what is displayed, never what is stored.
+3. Replace free-text inputs for the six bilingual fields with searchable pickers over the
+   Armenian labels ([§9](#9-working-in-armenian)).
+4. Render `brand`, `country`, `size` and `original_price` in English in both modes.
+5. Mark values that are not in the table, rather than snapping them.
+6. Leave the CSV export exactly as it is — it stays English
+   (`Mobile_app/csv_export_format.txt`).
+
+Nothing above is required to keep a v1.2 app working; it is the work needed to give the
+operator an Armenian screen.
+
+---
+
+## 11. Migration from v1.1
 
 ### What changed
 

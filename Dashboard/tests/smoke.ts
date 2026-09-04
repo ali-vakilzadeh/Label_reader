@@ -127,6 +127,26 @@ async function main(): Promise<void> {
   check('the same file, renamed, is refused by digest', refused);
   check('still three items', queryItems({}, { limit: 100 }).length === 3);
 
+  // CSV v2 (plan §14.1): the app supplies PackageCode and SetSize. The v1 files above must
+  // keep importing, and both new columns must land — SetSize without disturbing Pieces.
+  const v2 = Buffer.from(
+    [
+      `${HEADER},PackageCode,SetSize`,
+      '8910,Nike,clothing,Trousers,Men,Summer,L,Black,Cotton,VIETNAM,€59.90,230g,280g,2026-09-04 09:10:00,emp_402,EXPORT_2,PKG-2026-0914,',
+      '8911,Nike,clothing,Socks,Women,Winter,M,Black,Cotton,ITALY,€9.90,100g,120g,2026-09-04 09:12:00,emp_402,EXPORT_2,PKG-2026-0914,2',
+      '8912,Nike,clothing,Socks,Women,Winter,M,Black,Cotton,ITALY,€9.90,100g,120g,2026-09-04 09:13:00,emp_402,EXPORT_2,PKG-2026-0914,not-a-number',
+    ].join('\r\n'),
+    'utf8',
+  );
+  const v2Import = runImport('ui:test', 'ledger_v2.csv', v2, 'SKIP');
+  check('an 18-column v2 ledger imports', v2Import.inserted === 3 && v2Import.failed === 0, JSON.stringify(v2Import.rows));
+  check('PackageCode lands in package_code', getItem('8910').package_code === 'PKG-2026-0914');
+  check('a blank SetSize means one garment', getItem('8910').set_size === 1);
+  check('SetSize lands in set_size', getItem('8911').set_size === 2);
+  check('a set does not inflate Pieces — it is one article', getItem('8911').pieces === 1);
+  check('the packet weight is kept as labelled, not divided', getItem('8911').netto_g === 100);
+  check('an unusable SetSize falls back to 1 rather than failing the row', getItem('8912').set_size === 1);
+
   section('Review flags');
   // "trowsers" resolves at 0.88 similarity, above the 0.85 gate, so it IS snapped —
   // and the snap is surfaced on the row rather than applied silently.

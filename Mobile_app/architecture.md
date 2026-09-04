@@ -96,6 +96,8 @@ When the user taps **"Confirm & Save"**, the record is saved locally in SQLite/R
 | `material` | AI extracted / User verified |
 | `original_price` | AI extracted / User verified |
 | `image_files` | Semicolon-separated local image filenames (e.g., `IMG_001_1.jpg; IMG_001_2.jpg`) |
+| `package_code` | Operator-entered on the Pre-Capture screen; sticky across scans until changed. Never sent to Gemini and never sent to the middleware — it exists only in Room and in the exported CSV (`PackageCode`, see `csv_export_format.txt`) |
+| `set_size` | Integer, default `1`. Operator-entered in the Floating Review Dialog for articles sold as a set (2-pack of stockings, 2-pack of undies). Never asked of Gemini — the packaging hides the second item. CSV column `SetSize`; not sent to the middleware |
 
 ---
 
@@ -104,10 +106,17 @@ When the user taps **"Confirm & Save"**, the record is saved locally in SQLite/R
 * **Threshold Logic:** Any field returned by Gemini where `confidence < 0.70` triggers a yellow background (`#FFF9C4`) on the input container in the Floating Review Dialog.
 * **Blank Fields:** If Gemini returns a confidence $\le 0.50$ for missing data, the field displays as empty with a yellow background, prompting the user to either fill it in manually or accept it as blank.
 
+### Set size
+
+The review dialog also carries a **`Set of X`** stepper, defaulting to `1`. The operator raises it when the article is a packaged set — a 2-pack of stockings, a 2-pack of undies. It is deliberately outside the AI-extracted block: it carries no confidence, is never highlighted yellow, and is never pre-filled from a Gemini response, because the second item is usually inside the packaging where the camera cannot see it.
+
+Raising it does **not** change any other field. The row still describes one packet: `Netto` and `Brutto` stay as read from the label (the whole packet), and size, colour and price describe the set as a whole. A packet holding mixed sizes or colours is not a set — scan those as separate articles.
+
 ---
 
 ## Technical Setup Plan
 
-1. **Pre-Capture Screen:** Add quick dropdown selectors for `Category`, `Sub-category`, `Gender`, and `Season` before opening the CameraX interface.
-2. **App Settings Screen:** Add `Username` and `Server Password` fields. Storing the valid password unlocks app capabilities and enables the Danger Zone button to purge local scan history.
-3. **CSV Export:** Implement native sharing (`Intent.ACTION_SEND`) passing the generated `.csv` containing all 16 schema columns.
+1. **Pre-Capture Screen:** Add quick dropdown selectors for `Category`, `Sub-category`, `Gender`, and `Season` before opening the CameraX interface, plus a `Package code` text field that persists across scans until the operator changes it.
+2. **Review Dialog:** Add the `Set of X` stepper (default `1`) alongside the extracted fields, outside the confidence-highlighting logic.
+3. **App Settings Screen:** Add `Username` and `Server Password` fields. Storing the valid password unlocks app capabilities and enables the Danger Zone button to purge local scan history.
+4. **CSV Export:** Implement native sharing (`Intent.ACTION_SEND`) passing the generated `.csv` containing all 18 schema columns.

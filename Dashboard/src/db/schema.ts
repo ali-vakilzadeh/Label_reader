@@ -36,6 +36,7 @@ CREATE TABLE IF NOT EXISTS items (
   netto_g                   REAL,
   brutto_g                  REAL,
   pieces                    INTEGER NOT NULL DEFAULT 1,
+  set_size                  INTEGER NOT NULL DEFAULT 1,
   care_info                 TEXT,
 
   field_src_json            TEXT NOT NULL DEFAULT '{}',
@@ -197,6 +198,7 @@ export function ensureColumns(db: Database): void {
     ['items', 'suggestion_versions_json', 'TEXT'],
     ['items', 'dup_dismissed', 'INTEGER NOT NULL DEFAULT 0'],
     ['items', 'care_info', 'TEXT'],
+    ['items', 'set_size', 'INTEGER NOT NULL DEFAULT 1'],
     ['dash_users', 'columns_json', 'TEXT'],
   ];
   for (const [table, column, decl] of wanted) {

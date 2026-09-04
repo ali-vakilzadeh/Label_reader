@@ -79,6 +79,7 @@ to keep in sync.
 | `POST` | `/api/v1/vision/extract` | Bearer | multipart, ≤8 images. **Always 202** — stores and queues |
 | `GET` | `/api/v1/vision/result/:apparel_id` | Bearer | Fetch one result; never purged |
 | `GET` | `/api/v1/vision/results?ids=` | Bearer | Batch fetch, max 100 ids |
+| `GET` | `/api/v1/reference-tables` | Bearer | The seven taxonomy tables as `{en, hy, id}`; ETagged, `304` when current |
 | `PUT` | `/api/v1/flywheel/confirm/:apparel_id` | Bearer + key | **Hidden** — binds ground truth |
 | `GET` | `/api/v1/flywheel/stats` | Bearer + key | **Hidden** — buffer occupancy |
 | `GET` | `/api/v1/flywheel/sample/:apparel_id` | Bearer + key | **Hidden** — inspect one sample |
@@ -180,16 +181,32 @@ Run it on demand with `npm run render:now`.
 
 ---
 
-## Bilingual export — dashboard scope
+## Armenian — served, never translated
 
-Armenian text and the numeric taxonomy ids are **not used by the middleware**. It works in
-canonical English and emits English. The dashboard joins to Armenian and the ids using
-[`reference_data/*.csv`](../reference_data/), which carry `english, armenian, id` per table.
-Customs codes are likewise dashboard-only.
+The operator reads and chooses in Armenian; the record stays English. Nothing in this server
+translates anything, and the model is never asked to.
 
-`src/services/exportService.ts`, `scripts/convertTranslations.ts` and `data/translations.csv`
-predate that decision and are no longer wired into the server. They are retained for now so the
-work can be moved to the dashboard rather than rewritten.
+`GET /api/v1/reference-tables` publishes the client's seven tables as English key + Armenian
+label + numeric id. The app displays `hy` and stores `en`. A row with no Armenian is published as
+`hy: null` and the app shows the English word — never blank, never machine-translated. `brand`
+and `country` are English in both languages, by client decision, including on the paperwork.
+
+Why not just translate: a model asked for Armenian returns a different wording of the same term
+on different scans, and those variants become separate values that no filter or invoice total can
+group. One canonical English key with one Armenian label is what makes Armenian reporting work.
+
+Supervisors change the tables from the dashboard through `reference_data_requests` in
+`control.db`. This server is the only writer. Changes are additive — an English key is never
+renamed or deleted, because it is the join every stored scan already depends on. Applying one
+re-reads the CSVs, rebuilds the matcher in place and regenerates the prompt, so a new term is
+live without a restart.
+
+See `dev_report.md` §26, `api_contract.md` §9, `UI_messaging_protocol.md` §9.2.
+
+**Scan data is still English only.** Armenian text and the numeric ids never appear in `data`;
+the dashboard owns the legal and presentational joins. `src/services/exportService.ts`,
+`scripts/convertTranslations.ts` and `data/translations.csv` predate that split and remain
+unwired, retained so the work can move to the dashboard rather than be rewritten.
 
 ---
 
@@ -233,10 +250,9 @@ tests/                     smoke.ts, liveExtract.ts, cronCheck.ts
 
 ## Open item
 
-The client reference tables changed the values on the wire: `color` now has 26 options (was 9),
-`gender` uses `Men`/`Women` (was `male`/`female`), `season` uses `Autumn` (was `fall`), and
-`sub_category` has 295 entries (was 14). `api_contract.md` still documents the old enums and
-needs a coordinated update with the Android developer.
+None outstanding on the contract. The reference-table vocabularies were adopted in
+`api_contract.md` v1.2, and v1.3 added the bilingual endpoint above. Both were coordinated with
+the Android developer.
 
 ---
 

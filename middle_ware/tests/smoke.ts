@@ -16,7 +16,12 @@ import {
 import { normalizeExtraction } from '../src/services/visionService';
 import { screenConfidence } from '../src/services/flywheelService';
 import { resolveWeights } from '../src/utils/weights';
-import { SYSTEM_INSTRUCTION, EXTRACTION_SCHEMA } from '../src/services/geminiService';
+import { buildSystemInstruction, buildExtractionSchema } from '../src/services/geminiService';
+
+// Built per call so a reference-table reload reaches the model (§4.6); snapshot
+// them once here so every check below reads the same prompt.
+const SYSTEM_INSTRUCTION = buildSystemInstruction();
+const EXTRACTION_SCHEMA = buildExtractionSchema();
 import type { GeminiRawExtraction } from '../src/types';
 
 let passed = 0;

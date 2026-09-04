@@ -71,6 +71,7 @@
         <label><%= t('netto') %><input name="netto" value="<%= item.netto || '' %>" <%= item.locked ? 'disabled' : '' %>></label>
         <label><%= t('brutto') %><input name="brutto" value="<%= item.brutto || '' %>" <%= item.locked ? 'disabled' : '' %>></label>
         <label><%= t('pieces') %><input name="pieces" type="number" min="1" value="<%= item.pieces %>" <%= item.locked ? 'disabled' : '' %>></label>
+        <label><%= t('set_size') %><input name="set_size" type="number" min="1" value="<%= item.set_size %>" <%= item.locked ? 'disabled' : '' %>></label>
         <label><%= t('package_code') %><input name="package_code" value="<%= item.package_code || '' %>" <%= item.locked ? 'disabled' : '' %>></label>
         <label><%= t('article_no') %><input name="article_no" value="<%= item.article_no || '' %>" <%= item.locked ? 'disabled' : '' %>></label>
         <label>Care information<input name="care_info" value="<%= item.care_info || '' %>" <%= item.locked ? 'disabled' : '' %>></label>

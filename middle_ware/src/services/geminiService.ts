@@ -238,39 +238,41 @@ function describe(error: unknown): string {
  * the answer is used exactly as returned. Those lists come from the same taxonomy
  * files the matcher indexes, so prompt and server can never disagree.
  */
-export const SYSTEM_INSTRUCTION = [
-  'Analyze apparel label and scale display images.',
-  'Report EXACTLY what is printed on the labels for these fields, transcribing',
-  'the text as it appears and never substituting a similar word:',
-  'brand_name, country_of_origin, sub_category (the garment type named on the',
-  'label or clearly visible in the photo), and material (the fibre composition).',
-  'If one of these is not legible, return an empty string rather than a guess.',
-  'MATERIAL LANGUAGE: labels repeat one composition in several languages, e.g.',
-  '"100% ALGODON / ALGODAO / COTTON / COTON / COTONE". Those are translations of',
-  'the SAME fibre, not extra fibres: report the composition ONCE in English and',
-  'drop the other languages — that example is exactly "100% Cotton". The fibres',
-  'you report must total 100%; never add translations together. Translate a fibre',
-  'named only in a foreign language into its English name (algodon/cotone ->',
-  'Cotton, laine/lana -> Wool, pelle/cuir -> Leather).',
-  'Extract size and original_price as printed.',
-  'Read weights from scale displays into an array.',
-  'For the following fields choose exactly one option from the list given:',
-  `color from [${TAXONOMY_KEYS.color}];`,
-  `category from [${TAXONOMY_KEYS.category}];`,
-  `gender from [${TAXONOMY_KEYS.gender}];`,
-  `season from [${TAXONOMY_KEYS.season}].`,
-  'Do not invent values outside those four lists.',
-  'RULE: Return a confidence score between 0.0 and 1.0 for EVERY field.',
-  'If a field is missing, guess ONLY if confidence > 0.50.',
-  'Otherwise return empty string with 0.0 confidence.',
-  'SHOES: if the item is footwear and no composition is printed anywhere, ignore',
-  'the two rules above and infer the material of the upper from the visible',
-  'construction, as a SINGLE English term ("Leather", "Faux leather", "Suede",',
-  '"Textile", "Synthetic material", "Rubber", "Mesh"), with no percentage and no',
-  'upper/sole wording, at confidence 0.50 or lower to mark it inferred. Footwear',
-  'material is the ONLY field that may be filled in without printed evidence;',
-  'when a shoe label does print a composition, transcribe it under the rule above.',
-].join(' ');
+export function buildSystemInstruction(): string {
+  return [
+    'Analyze apparel label and scale display images.',
+    'Report EXACTLY what is printed on the labels for these fields, transcribing',
+    'the text as it appears and never substituting a similar word:',
+    'brand_name, country_of_origin, sub_category (the garment type named on the',
+    'label or clearly visible in the photo), and material (the fibre composition).',
+    'If one of these is not legible, return an empty string rather than a guess.',
+    'MATERIAL LANGUAGE: labels repeat one composition in several languages, e.g.',
+    '"100% ALGODON / ALGODAO / COTTON / COTON / COTONE". Those are translations of',
+    'the SAME fibre, not extra fibres: report the composition ONCE in English and',
+    'drop the other languages — that example is exactly "100% Cotton". The fibres',
+    'you report must total 100%; never add translations together. Translate a fibre',
+    'named only in a foreign language into its English name (algodon/cotone ->',
+    'Cotton, laine/lana -> Wool, pelle/cuir -> Leather).',
+    'Extract size and original_price as printed.',
+    'Read weights from scale displays into an array.',
+    'For the following fields choose exactly one option from the list given:',
+    `color from [${TAXONOMY_KEYS.color}];`,
+    `category from [${TAXONOMY_KEYS.category}];`,
+    `gender from [${TAXONOMY_KEYS.gender}];`,
+    `season from [${TAXONOMY_KEYS.season}].`,
+    'Do not invent values outside those four lists.',
+    'RULE: Return a confidence score between 0.0 and 1.0 for EVERY field.',
+    'If a field is missing, guess ONLY if confidence > 0.50.',
+    'Otherwise return empty string with 0.0 confidence.',
+    'SHOES: if the item is footwear and no composition is printed anywhere, ignore',
+    'the two rules above and infer the material of the upper from the visible',
+    'construction, as a SINGLE English term ("Leather", "Faux leather", "Suede",',
+    '"Textile", "Synthetic material", "Rubber", "Mesh"), with no percentage and no',
+    'upper/sole wording, at confidence 0.50 or lower to mark it inferred. Footwear',
+    'material is the ONLY field that may be filled in without printed evidence;',
+    'when a shoe label does print a composition, transcribe it under the rule above.',
+  ].join(' ');
+}
 
 /** {value, confidence} leaf shared by every extracted field. */
 function confidenceField(description: string): Schema {
@@ -287,51 +289,53 @@ function confidenceField(description: string): Schema {
   };
 }
 
-export const EXTRACTION_SCHEMA: Schema = {
-  type: Type.OBJECT,
-  properties: {
-    brand_name: confidenceField('Brand name exactly as printed on the label.'),
-    country_of_origin: confidenceField(
-      'Country of manufacture exactly as printed, e.g. "Made in Viet Nam".',
-    ),
-    size: confidenceField('Size as printed, e.g. "XL", "EU 42", "32W x 34L".'),
-    color: confidenceField(`Dominant color, one of: ${TAXONOMY_KEYS.color}.`),
-    material: confidenceField(
-      'Fibre composition in ENGLISH ONLY, e.g. "80% Cotton 20% Polyester". ' +
-        'Multilingual labels repeat one composition in several languages: report ' +
-        'it once in English ("100% ALGODON / ALGODAO / COTTON / COTON / COTONE" ' +
-        'is "100% Cotton"). For footwear with no printed composition, give the ' +
-        'most likely material from the visible construction, with confidence <= 0.50.',
-    ),
-    original_price: confidenceField('Retail price including currency symbol.'),
-    category: confidenceField(`One of: ${TAXONOMY_KEYS.category}.`),
-    sub_category: confidenceField(
-      'Garment type named on the label or clearly visible, in your own words. ' +
-        'Do not force it into a category list.',
-    ),
-    gender: confidenceField(`One of: ${TAXONOMY_KEYS.gender}.`),
-    season: confidenceField(`One of: ${TAXONOMY_KEYS.season}.`),
-    weights: {
-      type: Type.ARRAY,
-      description:
-        'Every distinct weight reading visible on scale displays, in capture order, with units.',
-      items: confidenceField('Weight reading exactly as displayed, e.g. "240g".'),
+export function buildExtractionSchema(): Schema {
+  return {
+    type: Type.OBJECT,
+    properties: {
+      brand_name: confidenceField('Brand name exactly as printed on the label.'),
+      country_of_origin: confidenceField(
+        'Country of manufacture exactly as printed, e.g. "Made in Viet Nam".',
+      ),
+      size: confidenceField('Size as printed, e.g. "XL", "EU 42", "32W x 34L".'),
+      color: confidenceField(`Dominant color, one of: ${TAXONOMY_KEYS.color}.`),
+      material: confidenceField(
+        'Fibre composition in ENGLISH ONLY, e.g. "80% Cotton 20% Polyester". ' +
+          'Multilingual labels repeat one composition in several languages: report ' +
+          'it once in English ("100% ALGODON / ALGODAO / COTTON / COTON / COTONE" ' +
+          'is "100% Cotton"). For footwear with no printed composition, give the ' +
+          'most likely material from the visible construction, with confidence <= 0.50.',
+      ),
+      original_price: confidenceField('Retail price including currency symbol.'),
+      category: confidenceField(`One of: ${TAXONOMY_KEYS.category}.`),
+      sub_category: confidenceField(
+        'Garment type named on the label or clearly visible, in your own words. ' +
+          'Do not force it into a category list.',
+      ),
+      gender: confidenceField(`One of: ${TAXONOMY_KEYS.gender}.`),
+      season: confidenceField(`One of: ${TAXONOMY_KEYS.season}.`),
+      weights: {
+        type: Type.ARRAY,
+        description:
+          'Every distinct weight reading visible on scale displays, in capture order, with units.',
+        items: confidenceField('Weight reading exactly as displayed, e.g. "240g".'),
+      },
     },
-  },
-  required: [
-    'brand_name',
-    'country_of_origin',
-    'size',
-    'color',
-    'material',
-    'original_price',
-    'category',
-    'sub_category',
-    'gender',
-    'season',
-    'weights',
-  ],
-};
+    required: [
+      'brand_name',
+      'country_of_origin',
+      'size',
+      'color',
+      'material',
+      'original_price',
+      'category',
+      'sub_category',
+      'gender',
+      'season',
+      'weights',
+    ],
+  };
+}
 
 export interface InlineImage {
   mimeType: string;
@@ -374,9 +378,9 @@ export async function extractApparelData(
       },
     ],
     config: {
-      systemInstruction: SYSTEM_INSTRUCTION,
+      systemInstruction: buildSystemInstruction(),
       responseMimeType: 'application/json',
-      responseSchema: EXTRACTION_SCHEMA,
+      responseSchema: buildExtractionSchema(),
       temperature: 0,
     },
       }),

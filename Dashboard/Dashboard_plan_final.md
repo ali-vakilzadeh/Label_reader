@@ -1,9 +1,14 @@
 # Label Reader — Analytical Dashboard
 ## Final Consolidated Plan
 
-**Version 1.1 · 2026-08-30 · Status: specification agreed; implementation started**
+**Version 1.2 · 2026-09-04 · Status: specification agreed; implementation started**
 
-*v1.1 folds in six client answers that close five of the seven open gaps. See §14.*
+*v1.2 adds the reference-data authoring workflow (§6.4): the dashboard is now where a supervisor
+decides an Armenian label or a missing taxonomy term, and those decisions propagate to the
+middleware and the handsets. Prompted by the client's requirement that operators read AI results
+and record decisions in Armenian.*
+
+*v1.1 folded in six client answers that closed five of the seven open gaps. See §14.*
 
 Format note: Markdown, with machine-readable blocks (`json`) embedded where a builder needs
 literal values. A pure-JSON plan cannot carry the *why*, and the why is what keeps the next
@@ -14,9 +19,9 @@ developer from undoing a decision. The JSON blocks are the parts to copy verbati
 | Source | Role here |
 |---|---|
 | `docs/client_data/Outfit_Label_Reader_Order_Letter_FINAL.docx` | Contractual acceptance criteria. Governs on conflict (§7 of the letter). |
-| `middle_ware/UI_messaging_protocol.md` v1.3 | **Locked.** The only channel between dashboard and middleware. |
+| `middle_ware/UI_messaging_protocol.md` v1.4 | **Locked.** The only channel between dashboard and middleware. §9.2 carries taxonomy decisions. |
 | `middle_ware/server_setting_page.md` | Screen-level spec for the settings area. Absorbed into §11 here. |
-| `middle_ware/api_contract.md` v1.2 | **Locked** app↔middleware contract. Defines the 12 extracted fields. |
+| `middle_ware/api_contract.md` v1.3 | **Locked** app↔middleware contract. Defines the 12 extracted fields, and §4.6 serves the bilingual tables to the app. |
 | `middle_ware/server_specification.json` v2.0 | Division of labour, taxonomy strategy. |
 | `Mobile_app/csv_export_format.txt` | The daily ledger the dashboard ingests. |
 | `docs/client_data/*.xlsx` | The client's **real** invoice / inspection layouts — the export targets. |
@@ -205,7 +210,8 @@ everything the middleware holds.
     "brutto":           "TEXT",
     "netto_g":          "REAL NULL — normalised to grams",
     "brutto_g":         "REAL NULL",
-    "pieces":           "INTEGER NOT NULL DEFAULT 1",
+    "pieces":           "INTEGER NOT NULL DEFAULT 1 — articles on the line (parent + clones)",
+    "set_size":         "INTEGER NOT NULL DEFAULT 1 — garments inside one packaged article. CSV 'SetSize'.",
     "care_info":        "TEXT NULL — §14.1"
   },
   "provenance": {
@@ -270,12 +276,17 @@ the authority for everything the CSV cannot carry.
 
 ### 5.1 Path A — the daily CSV ledger (primary)
 
-Input is exactly `Mobile_app/csv_export_format.txt`: RFC 4180, 16 columns.
+Input is exactly `Mobile_app/csv_export_format.txt`: RFC 4180, 18 columns.
 
 ```
 Barcode, Brand, Category, SubCategory, Gender, Season, Size, Color,
-Material, Country, OriginalPrice, Netto, Brutto, Timestamp, Operator, ExportBatch
+Material, Country, OriginalPrice, Netto, Brutto, Timestamp, Operator, ExportBatch,
+PackageCode, SetSize
 ```
+
+`PackageCode` and `SetSize` are the CSV v2 additions agreed on 2026-09-04 (§14.1). Both are in
+`V2_OPTIONAL`, so a v1 file with 16 columns still imports unchanged — `validateHeaders()`
+requires only the v1 set and ignores extras.
 
 Pipeline — the whole run is **one SQLite transaction**; any failure rolls back and the file is
 not recorded as imported.
@@ -359,6 +370,15 @@ All files are UTF-8 **with BOM** and have inconsistent header names. The loader 
 BOM, match headers case-insensitively on the substrings `armenian` / `english` / `id`, and ignore
 trailing empty columns. Do not hand-code seven parsers.
 
+**The dashboard reads these files but never writes them.** Since `UI_messaging_protocol.md` v1.4
+the middleware is the sole writer, because it also serves them to the Android fleet and must
+re-read them and reprogram its matcher in the same step. The dashboard *proposes* a change and
+polls for the outcome — see [§6.4](#64-authoring-armenian-and-new-terms). One writer is what
+makes "the same file, three consumers" safe.
+
+`Dashboard/reference_data/category.csv`, `custom_codes.csv` and `hs_map.csv` are dashboard-owned
+and stay hand-edited here; they are not part of that channel.
+
 New in this project, both hand-editable CSV in `Dashboard/reference_data/`:
 
 - **`custom_codes.csv`** — one-time extraction of `docs/client_data/custom_codes.xls`
@@ -411,6 +431,9 @@ it returns the English word.**
   direction and follows the same rule: no match → keep the Armenian text verbatim, flag
   `UNMATCHED`.
 - Free text — `size`, `notes`, `care_info`, brand names — is never translated in either direction.
+- A term with no Armenian is not a bug to work around at render time; it is a **task for a
+  supervisor** ([§6.4](#64-authoring-armenian-and-new-terms)). Render the English word today, and
+  give someone a way to decide the Armenian once, for everyone.
 
 **UI language toggle:** one `EN | AM` control in the header, a per-user preference stored in
 `dash_users`, applied to *both* interface chrome and data values. It does **not** change what is
@@ -420,6 +443,82 @@ export dialog, because an operator working in Armenian may still need an English
 **Middleware message text** follows the protocol's own rule instead: `message_translations` for
 locale `hy`, falling back to `message_dictionary.default_text` (§10.4). Same principle, different
 table, because that one is owned by the messaging contract.
+
+### 6.4 Authoring Armenian and new terms
+
+New in v1.2, and the reason it exists: **the operators now work in Armenian on the handset.** The
+Android app displays the Armenian label for every AI result and offers Armenian pickers for the
+fields the operator chooses (`api_contract.md` v1.3 §4.6, §9). It gets those labels from the same
+seven CSVs this dashboard reads, served by the middleware.
+
+That makes the tables operational rather than static, and it puts two jobs here:
+
+1. **A term the label vocabulary is missing.** An operator scans a garment outside the 295
+   sub-categories. The middleware keeps the transcription verbatim, the row lands `UNMATCHED` in
+   the review queue (§6.2), and a supervisor decides its canonical English and Armenian.
+2. **A row with no Armenian.** Every bilingual table is fully translated today, but new rows
+   arrive without one.
+
+Both are the same submission.
+
+#### The channel
+
+Insert into `reference_data_requests` in `control.db`, poll until terminal, show `result_detail`
+verbatim. Full column reference in `UI_messaging_protocol.md` §9.2.
+
+```sql
+INSERT INTO reference_data_requests
+  (action, table_name, english, armenian, entry_id, submitted_at, submitted_by, status)
+VALUES (:action, :table_name, :english, :armenian, NULL,
+        unixepoch() * 1000, :actor, 'PENDING');
+```
+
+| Action | Use for |
+|---|---|
+| `SET_ARMENIAN` | An existing English key that needs its Armenian label filled in or corrected |
+| `ADD_ENTRY` | A term that is genuinely not in the table yet. `entry_id` stays `NULL` — the middleware assigns the next id above the client's highest |
+
+```
+PENDING ──► APPLIED | REJECTED
+```
+
+On `APPLIED` the middleware rewrites the CSV, re-reads every table, rebuilds its matcher and
+regenerates its AI prompt, and `reference_data_status.version` changes. Handsets pick the new
+vocabulary up on their next `/health`. **Reload the dashboard's own table cache on `APPLIED`** —
+otherwise this screen is the last place in the system still showing the old vocabulary.
+
+#### Rules the UI must respect
+
+- **Additive only. Never offer rename or delete.** The English key is the join: it is in every
+  stored scan, every `*_id` lookup here, and every export already delivered. The middleware
+  refuses anything else, but the UI should not offer what will be refused. Correcting an English
+  spelling is a documented hand edit on the server plus `REFERENCE_DATA_RELOAD`.
+- **`brand` and `country` have no Armenian column** and submissions for them are refused. Do not
+  render an Armenian field for those two.
+- **Latin text in an Armenian field is refused**, unless it repeats the English term exactly on a
+  row that has no Armenian yet — which is how "this one stays English" is recorded, as `Unisex`
+  and `All Seasons` already do. Say that in the field's helper text rather than letting the
+  supervisor discover it through a rejection.
+- **Show `result_detail` verbatim on rejection.** It names the reason.
+- **A rejection changed nothing.** Say so, so nobody re-submits hoping it half-applied.
+
+#### Where it appears
+
+Two entry points, one flow:
+
+- **Review queue / items grid (§11.3)** — an `UNMATCHED` taxonomy value gets an *Add to
+  reference table* action, prefilled with the operator's text as the English key. This is the one
+  that matters: it closes the loop from "an operator met a new garment" to "every handset knows
+  the word", without an app release.
+- **Server Settings 2 (§11.7)** — the reference-data card, for deliberate translation work.
+
+#### Language of record, restated
+
+Nothing about this changes what is stored. The CSV ledger, `items`, and every API value stay
+**English** (`Mobile_app/csv_export_format.txt` §4). Armenian is joined for display and export,
+here and on the handset. That is what keeps one garment type one string instead of five spellings
+of it, and it is the whole reason the operator-facing Armenian is a lookup rather than a
+translation.
 
 ---
 
@@ -458,6 +557,11 @@ Pieces for a line = SUM(items.pieces) over
 
 One line per group; clone and member rows are collapsed into it, never emitted separately and
 never lost from the count.
+
+`set_size` is **not** part of this sum and is never folded into `Pieces`. It counts garments
+inside one packaged article; `Pieces` counts articles. A 2-pack scanned once and cloned twice is
+`Pieces = 3`, `set_size = 2` — six garments, which this application deliberately never computes
+for you (§14.1).
 
 ### 7.4 Duplicate warning — detection, not merging
 On import and on demand:
@@ -705,8 +809,21 @@ scans; operational records and photos are never affected*.
 
 ### 10.6 Commands
 `VISION_ACCOUNT_REFRESH` · `VISION_SETTINGS_UPDATED` · `FLYWHEEL_DUMPED` · `DRAIN_QUEUE_NOW` ·
-`PING`. Lifecycle `PENDING → IN_PROGRESS → DONE | FAILED | REJECTED`. `PENDING` means *not yet
-polled*, never *ignored*. Show `result_detail` verbatim.
+`REFERENCE_DATA_RELOAD` · `PING`. Lifecycle `PENDING → IN_PROGRESS → DONE | FAILED | REJECTED`.
+`PENDING` means *not yet polled*, never *ignored*. Show `result_detail` verbatim.
+
+### 10.7 Reference data
+Two tables, both added in `UI_messaging_protocol.md` v1.4 and both covered by §6.4:
+
+- **`reference_data_requests`** — dashboard → middleware. `SET_ARMENIAN` and `ADD_ENTRY` only.
+  Poll to `APPLIED` / `REJECTED`, show `result_detail` verbatim, and reload this app's table cache
+  on `APPLIED`.
+- **`reference_data_status`** — middleware → dashboard, single row. `version` is the vocabulary
+  fingerprint the fleet is being served; `counts_json` has per-table row and Armenian counts;
+  `untranslated` is the supervisor's to-do count.
+
+`REFERENCE_DATA_RELOAD` is for a CSV edited by hand on the server. It is not needed after an
+`APPLIED` request — that already reloads.
 
 ---
 
@@ -741,6 +858,10 @@ Server-side paging, sorting and filtering; SQL does the work.
   (writes `price_history`) · 🖼️ original photos · ✨ catalog image (view; request re-render when
   `rendering_status = FAILED`) · 👥 group / apply-to-group · ⚠️ duplicate detail.
 - **Bulk**: set price, set package code, group as article, mark reviewed, export selection.
+- **`UNMATCHED` taxonomy value** → *Add to reference table* (§6.4), prefilled with the operator's
+  text as the English key and an empty Armenian field. This is the loop that turns one operator
+  meeting a new garment into a word every handset knows. It does **not** change the row's stored
+  value; accepting the row's text is a separate, explicit edit.
 - **Locked rows** reject every edit path including import overwrite. That is the whole point of the
   lock — it is not a UI hint.
 
@@ -776,9 +897,24 @@ Tabs, from `server_setting_page.md` screens B, C, D:
 - **Message translations** — grid of *code · category · severity · English · Armenian text ·
   Armenian hint*, untranslated codes first. Upserts `message_translations`. Resolution is always
   translation → `default_text`.
-- **Reference data** — read-only view of the loaded lookup tables with row counts and file
-  timestamps, plus a *reload* button. Editing is by editing the CSV, deliberately: these are the
-  client's tables and must stay hand-editable and diffable.
+- **Reference data** — the loaded lookup tables with row counts, Armenian counts and file
+  timestamps, plus the live `version` and `untranslated` count from `reference_data_status`, and a
+  *reload* button issuing `REFERENCE_DATA_RELOAD`.
+
+  Two **authoring** actions per §6.4, and no others:
+  - *Add term* → `ADD_ENTRY`. English key required, Armenian optional.
+  - *Set Armenian* → `SET_ARMENIAN`, on a row that has none or needs correcting.
+
+  Default the list to **untranslated rows first** — that list is the supervisor's actual job, and
+  its length is what stands between the operators and a fully Armenian screen. Brand and country
+  are shown without an Armenian field at all.
+
+  There is deliberately **no rename and no delete**. The English key is the join every stored scan
+  and every delivered export depends on. Bulk correction stays a hand edit to the CSV on the
+  server followed by a reload: slower, visible, and reviewable, which is the point.
+
+  The files themselves remain hand-editable and diffable — that has not changed. What changed is
+  that a supervisor no longer needs shell access to add one word.
 
 ---
 
@@ -854,12 +990,50 @@ document.
 
 ### Closed
 
-**14.1 `Pieces`, `package code`, `care information` — deferred by agreement.** ✅
-The order letter requires them; `api_contract.md` v1.2 does not carry them. **Client: these lie
-for future expansion.** No change is requested of the Android developer. The dashboard keeps the
-three columns, accepts manual entry and bulk edit, and exports them wherever the client's own
-layouts have them (`Pieces` and `package` are both in the seller invoice). When the app supplies
-them later, the importer picks them up from a CSV v2 with no schema change.
+**14.1 `Pieces`, `package code`, `care information` — `package code` and sets now supplied by the app.** ✅
+The order letter requires all three; `api_contract.md` v1.2 carries none of them, and that stays
+true — see below. **Client: these lie for future expansion.** The dashboard keeps the three
+columns, accepts manual entry and bulk edit, and exports them wherever the client's own layouts
+have them (`Pieces` and `package` are both in the seller invoice).
+
+**Update 2026-09-04 — `package code` is the "later" case, now live.** The Android app captures a
+package code and writes it to the ledger as the 17th CSV column `PackageCode`
+(`Mobile_app/csv_export_format.txt`). It is deliberately **CSV-only**: it is not sent to Gemini
+(the model receives images and a fixed system instruction only) and `api_contract.md` is
+**unchanged at v1.2** — the value never touches the middleware or `server_scans.db`. The importer
+needs no change: `PackageCode` was already in `V2_OPTIONAL` and maps to `ledger_scans.package_code`.
+`care information` remains deferred and manual-entry only.
+
+**Update 2026-09-04 — sets arrive as `SetSize`, and `Pieces` stays what it was.** The client
+needs articles sold as a set reported (a 2-pack of stockings, a 2-pack of undies). The operator
+sets the count in the review dialog, **not** the AI: the packaging hides the second garment, so
+a vision answer would be a confident guess. It travels as the 18th CSV column `SetSize` and is
+CSV-only, exactly like `PackageCode` — `api_contract.md` stays at v1.2.
+
+The two counts are deliberately separate and are never multiplied by this application:
+
+| | Counts | Set by | Emitted by the app |
+|---|---|---|---|
+| `pieces` | Scanned **articles** on one invoice line — a parent plus its clones, or an article group | Dashboard, manual or by collapsing (§7.3) | No |
+| `set_size` | Garments inside **one** packaged article | Operator, in the app's review dialog | Yes, `SetSize` |
+
+A 2-pack is one article: `pieces = 1`, `set_size = 2`. **`Netto`/`Brutto` stay as read from the
+label — the weight of the whole packet, undivided** (client, 2026-09-04). That keeps the app
+honest: it reports what it saw and invents no arithmetic. It also means a reader wanting garment
+counts or per-garment weights must do that division themselves, knowingly.
+
+Wired this pass: `items.set_size` (with an `ensureColumns` upgrade for existing databases),
+`SetSize` in `V2_OPTIONAL`, the importer mapping, grid/detail editing, and the `set_size` column
+in preset 4. **Open, and deliberately not guessed:** presets 1–3 collapse clone families into one
+line, so if the client wants set size on the invoice, the customs sheet or the inspection form,
+someone must first say what it means for a collapsed line — the representative's value, or a sum.
+Ask before adding the column.
+
+> One consequence to watch: `package_code` is in `PROTECTED_ON_OVERWRITE`, so a value a person
+> typed in the dashboard survives a re-import and the CSV will *not* overwrite it. That was the
+> right rule while the column was manual-entry only. Now that the app is the source, decide
+> whether to drop `package_code` from that list — it is protecting human work against what is
+> now the authoritative value.
 
 **14.2 CSV cannot carry `cloned_from` or confidence — no longer a risk.** ✅
 **Client: the dashboard and middleware will always run on one server, and will be merged later.**
@@ -887,6 +1061,19 @@ tier and the picker work from day one.
 the candidate pool in §8.1, so the order-letter clause is satisfied as written and nothing further
 needs integrating. Removed from the risk list.
 
+**14.8 Operators must work in Armenian.** ✅ *(new, 2026-09-04)*
+**Client: the operator has to read every AI result in Armenian and record their decision in
+Armenian.** Resolved without translating anything. The middleware now serves the seven tables to
+the Android app (`api_contract.md` v1.3 §4.6); the app displays the Armenian label and stores the
+English key, exactly as this dashboard does. The AI is still never asked for Armenian, and the
+CSV ledger is still English — which is what keeps one garment type one searchable string instead
+of several spellings of it.
+
+An audit of the five bilingual tables found **no missing Armenian cell**, so the "the table may
+need more data" worry was really about *taxonomy* coverage: a label naming a garment outside the
+295. That is handled by the existing `UNMATCHED` review path, now with a supervisor action that
+writes the decision back (§6.4).
+
 ### Remaining
 
 **14.4 No size reference table.**
@@ -912,7 +1099,7 @@ here so nobody later "fixes" it.
 | **4 · Commercial** | Pieces, package, article groups, apply-to-group, duplicate detection, price history | Order-letter grouping and duplicate clauses demonstrable |
 | **5 · Exports** | Presets 1–4, EN/AM, BOM handling, warnings | Output matches the client's own xlsx files column for column |
 | **6 · Suggestions** | Price, weight, HS engines with basis strings | Every suggestion shows its sample size; none auto-applies |
-| **7 · Server settings** | Cards 6 and 7 in full, including the flywheel watermark flow | Every rule in §10.1 verified against a live middleware |
+| **7 · Server settings** | Cards 6 and 7 in full, including the flywheel watermark flow and the §6.4 authoring actions | Every rule in §10.1 verified against a live middleware; a term added here reaches a handset without an app release |
 | **8 · Analytics & polish** | Charts, saved column sets, keyboard navigation | — |
 
 Phase 2 depends on the middleware being deployed (Path B). Phase 6's HS **rule** tier stays
@@ -930,6 +1117,11 @@ Nothing else has an external dependency.
    the review queue. It is not silently changed to `Trousers`.
 4. Toggle to AM. Colour, gender, season, material and sub-category render Armenian; brand, country
    and size render English. Nothing renders blank.
+4b. Submit a new sub-category with its Armenian from the reference-data card. It comes back
+   `APPLIED`, `reference_data_status.version` changes, the term appears in this app's pickers
+   after the cache reload, and `GET /api/v1/reference-tables` on the middleware serves it — with
+   no restart of either process. Then submit the same term again and get a readable `REJECTED`
+   with the CSV unchanged.
 5. Export preset 1 in Armenian. Columns match `2nd package-invoice#166 (final).xlsx` exactly, and
    Excel opens it with correct Armenian.
 6. A parent with two clones exports as **one** line with `Pieces = 3`.
@@ -945,4 +1137,4 @@ Nothing else has an external dependency.
 
 *Supersedes `Dashboard/dashboard-plan.md`. Governed by
 `docs/client_data/Outfit_Label_Reader_Order_Letter_FINAL.docx`, and constrained by the locked
-contracts `middle_ware/api_contract.md` and `middle_ware/UI_messaging_protocol.md`.*
+contracts `middle_ware/api_contract.md` v1.3 and `middle_ware/UI_messaging_protocol.md` v1.4.*

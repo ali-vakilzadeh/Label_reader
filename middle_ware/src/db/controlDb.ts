@@ -181,6 +181,38 @@ controlDb.exec(`
   );
   CREATE INDEX IF NOT EXISTS idx_app_user_requests ON app_user_requests (status, id);
 
+  -- ------------------------------------------- reference data (UI <-> middleware)
+  -- Supervisor decisions about the client's taxonomy tables. The UI proposes;
+  -- the middleware validates and is the only process that writes the CSVs.
+  -- Additive only: SET_ARMENIAN fills in a label, ADD_ENTRY appends a row.
+  -- There is no rename and no delete, because the English key is the join every
+  -- stored scan and every delivered export already depends on.
+  CREATE TABLE IF NOT EXISTS reference_data_requests (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    action        TEXT NOT NULL,          -- SET_ARMENIAN | ADD_ENTRY
+    table_name    TEXT NOT NULL,          -- sub_category|brand|country|material|color|gender|season
+    english       TEXT NOT NULL,
+    armenian      TEXT,
+    entry_id      INTEGER,                -- NULL on ADD_ENTRY = assign the next free id
+    submitted_at  INTEGER NOT NULL,
+    submitted_by  TEXT,
+    status        TEXT NOT NULL DEFAULT 'PENDING',  -- PENDING|APPLIED|REJECTED
+    result_detail TEXT,
+    resolved_at   INTEGER
+  );
+  CREATE INDEX IF NOT EXISTS idx_reference_requests ON reference_data_requests (status, id);
+
+  -- Single row. What the fleet is currently being served, so the UI can show the
+  -- live version and count what still needs an Armenian label.
+  CREATE TABLE IF NOT EXISTS reference_data_status (
+    id           INTEGER PRIMARY KEY CHECK (id = 1),
+    version      TEXT NOT NULL,
+    counts_json  TEXT NOT NULL,
+    untranslated INTEGER NOT NULL DEFAULT 0,
+    loaded_at    INTEGER NOT NULL,
+    updated_at   INTEGER NOT NULL
+  );
+
   CREATE VIEW IF NOT EXISTS app_users_public AS
     SELECT username, display_name, status, created_at, created_by,
            updated_at, updated_by, last_login_at

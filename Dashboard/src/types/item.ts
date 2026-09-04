@@ -36,6 +36,8 @@ export interface ItemRow {
   netto_g: number | null;
   brutto_g: number | null;
   pieces: number;
+  /** Garments inside one packaged article (a 2-pack). 1 for an ordinary item. */
+  set_size: number;
   care_info: string | null;
 
   field_src_json: string;

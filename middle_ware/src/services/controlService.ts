@@ -28,6 +28,17 @@ import {
   takePendingSettings,
 } from '../db/visionSettings';
 import { processPendingUserRequests } from './userService';
+import {
+  applyReferenceRequest,
+  logReferenceStatus,
+  referenceStatus,
+  reloadReferenceData,
+} from './referenceService';
+import {
+  publishReferenceStatus,
+  resolveReferenceRequest,
+  takePendingReferenceRequests,
+} from '../db/referenceRequests';
 import { logger } from '../utils/logger';
 import type { GeminiClassification } from './geminiErrors';
 
@@ -233,6 +244,21 @@ function handleCommand(command: UiCommandRow): void {
       handleFlywheelDump(command);
       return;
 
+    case UI_COMMANDS.REFERENCE_DATA_RELOAD: {
+      const result = reloadReferenceData();
+      if (!result.ok) {
+        raiseEvent('REFERENCE_DATA_UNREADABLE', result.error);
+        markCommand(command.id, 'FAILED', result.error);
+        return;
+      }
+      publishReferenceState();
+      resolveEvent('REFERENCE_DATA_UNREADABLE');
+      raiseEvent('REFERENCE_DATA_RELOADED', `Reference tables reloaded at version ${result.version}.`);
+      resolveEvent('REFERENCE_DATA_RELOADED');
+      markCommand(command.id, 'DONE', `Reference data reloaded; version ${result.version}.`);
+      return;
+    }
+
     default:
       markCommand(command.id, 'REJECTED', `Unknown command "${command.command}".`);
       logger.warn(`Rejected unknown UI command "${command.command}"`);
@@ -282,6 +308,98 @@ function handleFlywheelDump(command: UiCommandRow): void {
     'DONE',
     `Purged ${removed} sample(s) up to id ${watermark}; ${remaining} retained.`,
   );
+}
+
+/** Mirrors the live reference-table state into control.db for the dashboard. */
+export function publishReferenceState(): void {
+  try {
+    publishReferenceStatus(referenceStatus());
+  } catch (error) {
+    logger.error('Could not publish reference-data status', error);
+  }
+}
+
+/**
+ * Applies supervisor decisions about the taxonomy tables.
+ *
+ * Each request is validated against the tables as they stand *at that moment*,
+ * and the files are re-read after every applied write. Validating a whole batch
+ * against one stale snapshot would let two submissions in the same batch add the
+ * same term twice.
+ *
+ * A rejection writes nothing. That is the point: a wrong Armenian label on a
+ * customs declaration is worse than a missing one, so a submission the
+ * middleware cannot verify comes back with a reason instead of being guessed at.
+ */
+export function processPendingReferenceRequests(): void {
+  let requests: ReturnType<typeof takePendingReferenceRequests>;
+  try {
+    requests = takePendingReferenceRequests();
+  } catch (error) {
+    logger.error('Reference-request polling failed', error);
+    return;
+  }
+  if (requests.length === 0) return;
+
+  let applied = 0;
+
+  for (const request of requests) {
+    let result;
+    try {
+      result = applyReferenceRequest({
+        action: request.action,
+        table_name: request.table_name,
+        english: request.english,
+        armenian: request.armenian,
+        entry_id: request.entry_id,
+      });
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error);
+      resolveReferenceRequest(request.id, 'REJECTED', detail);
+      raiseEvent('REFERENCE_REQUEST_REJECTED', detail, { request: request.id });
+      logger.error(`Reference request ${request.id} failed`, error);
+      continue;
+    }
+
+    if (result.outcome === 'REJECTED') {
+      resolveReferenceRequest(request.id, 'REJECTED', result.detail);
+      raiseEvent('REFERENCE_REQUEST_REJECTED', result.detail, { request: request.id });
+      logger.warn(`Reference request ${request.id} rejected: ${result.detail}`);
+      continue;
+    }
+
+    // The CSV on disk has changed; re-read so the next request in this batch is
+    // validated against it rather than against the pre-write snapshot.
+    const reload = reloadReferenceData();
+    if (!reload.ok) {
+      resolveReferenceRequest(
+        request.id,
+        'REJECTED',
+        `Written, but the table could not be re-read: ${reload.error}`,
+      );
+      raiseEvent('REFERENCE_DATA_UNREADABLE', reload.error, { request: request.id });
+      logger.error(`Reference reload failed after request ${request.id}: ${reload.error}`);
+      break;
+    }
+
+    applied += 1;
+    resolveReferenceRequest(request.id, 'APPLIED', result.detail);
+    raiseEvent('REFERENCE_DATA_UPDATED', result.detail, {
+      request: request.id,
+      by: request.submitted_by,
+    });
+    logger.info(`Reference request ${request.id} applied: ${result.detail}`);
+  }
+
+  if (applied > 0) {
+    resolveEvent('REFERENCE_DATA_UNREADABLE');
+    resolveEvent('REFERENCE_REQUEST_REJECTED');
+    // INFO events are raised so the dashboard can show the change happened, then
+    // resolved immediately — they describe a completed action, not a condition
+    // anyone has to clear.
+    resolveEvent('REFERENCE_DATA_UPDATED');
+    publishReferenceState();
+  }
 }
 
 /**
@@ -420,11 +538,14 @@ export function startControlService(): void {
   seedTestAccounts(env.seedTestAccounts);
 
   evaluateCredentialState();
+  logReferenceStatus();
+  publishReferenceState();
   publishHeartbeat();
   heartbeatTimer = setInterval(publishHeartbeat, env.controlHeartbeatMs);
   commandTimer = setInterval(() => {
     processPendingCommands();
     processPendingUserRequests();
+    processPendingReferenceRequests();
     void processPendingSettings();
   }, env.controlPollMs);
   heartbeatTimer.unref();

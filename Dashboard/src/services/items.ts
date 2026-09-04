@@ -149,6 +149,7 @@ const EDITABLE = new Set([
   'netto',
   'brutto',
   'pieces',
+  'set_size',
   'care_info',
   'package_code',
   'article_no',
@@ -211,9 +212,10 @@ export function updateItem(actor: string, apparelId: string, patch: Record<strin
         params.push(value, parseWeightToGrams(value));
         break;
       }
-      case 'pieces': {
+      case 'pieces':
+      case 'set_size': {
         const n = Number(value);
-        sets.push('pieces = ?');
+        sets.push(`${key} = ?`);
         params.push(Number.isFinite(n) && n > 0 ? Math.round(n) : 1);
         break;
       }

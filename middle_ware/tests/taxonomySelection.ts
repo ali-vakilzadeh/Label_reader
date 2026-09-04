@@ -45,7 +45,11 @@ async function main(): Promise<void> {
     seasonIndex,
     TAXONOMY_KEYS,
   } = await import('../src/utils/fuzzyMatcher');
-  const { SYSTEM_INSTRUCTION, EXTRACTION_SCHEMA } = await import('../src/services/geminiService');
+  const { buildSystemInstruction, buildExtractionSchema } = await import(
+    '../src/services/geminiService'
+  );
+  const SYSTEM_INSTRUCTION = buildSystemInstruction();
+  const EXTRACTION_SCHEMA = buildExtractionSchema();
   const { normalizeExtraction } = await import('../src/services/visionService');
 
   // ------------------------------------------------------------------------

@@ -15,3 +15,7 @@ public/catalog/*
 !public/catalog/.gitkeep
 
 # reference_data/ IS committed — it ships with the server.
+# Its .backups/ is not: the middleware writes a timestamped copy there before
+# every supervisor-approved edit (UI_messaging_protocol.md §9.2), which is
+# runtime state, not source.
+reference_data/.backups/

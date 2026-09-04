@@ -43,7 +43,7 @@ const V1_HEADERS = [
  * still imports unchanged and no schema migration is needed when the app starts sending
  * them.
  */
-const V2_OPTIONAL = ['ClonedFrom', 'Pieces', 'PackageCode', 'CareInfo', 'MinConfidence', 'CatalogImageUrl'] as const;
+const V2_OPTIONAL = ['ClonedFrom', 'Pieces', 'SetSize', 'PackageCode', 'CareInfo', 'MinConfidence', 'CatalogImageUrl'] as const;
 
 export type CollisionPolicy = 'SKIP' | 'UPDATE_EMPTY_ONLY' | 'OVERWRITE';
 
@@ -179,6 +179,11 @@ function prepareRow(raw: Record<string, string>, now: number): PreparedRow {
   values.cloned_from = trimOrNull(raw.ClonedFrom);
   const pieces = Number(trimOrNull(raw.Pieces) ?? '1');
   values.pieces = Number.isFinite(pieces) && pieces > 0 ? Math.round(pieces) : 1;
+  // SetSize counts garments inside one packaged article; Pieces counts articles. Nothing
+  // here multiplies them — see csv_export_format.txt section 3. Anything unusable means 1,
+  // because a set is the exception and a bad cell must not fail an otherwise good row.
+  const setSize = Number(trimOrNull(raw.SetSize) ?? '1');
+  values.set_size = Number.isFinite(setSize) && setSize > 0 ? Math.round(setSize) : 1;
   values.package_code = trimOrNull(raw.PackageCode);
   values.care_info = trimOrNull(raw.CareInfo);
   values.catalog_image_url = trimOrNull(raw.CatalogImageUrl);
@@ -201,7 +206,7 @@ const INSERT_COLUMNS = [
   'gender', 'gender_id', 'season', 'season_id', 'color', 'color_id',
   'material', 'material_id', 'country', 'country_id', 'size',
   'original_price', 'original_price_value', 'original_price_currency',
-  'netto', 'brutto', 'netto_g', 'brutto_g', 'pieces', 'care_info',
+  'netto', 'brutto', 'netto_g', 'brutto_g', 'pieces', 'set_size', 'care_info',
   'field_src_json', 'min_confidence', 'catalog_image_url',
   'review_state', 'created_at', 'updated_at', 'updated_by',
 ];

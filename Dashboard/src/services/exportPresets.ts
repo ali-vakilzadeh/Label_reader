@@ -122,6 +122,8 @@ const FULL: Column[] = [
   { header: 'netto_g', value: (l) => l.representative.netto_g ?? '' },
   { header: 'brutto_g', value: (l) => l.representative.brutto_g ?? '' },
   { header: 'pieces', value: (l) => l.pieces },
+  // Preset 4 does not collapse, so representative IS the row — set_size is per article.
+  { header: 'set_size', value: (l) => l.representative.set_size ?? 1 },
   { header: 'care_info', value: (l) => l.representative.care_info ?? '' },
   { header: 'user_decided_price', value: (l) => l.representative.user_decided_price ?? '' },
   { header: 'suggested_price', value: (l) => l.representative.suggested_price ?? '' },

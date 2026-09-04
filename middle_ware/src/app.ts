@@ -8,6 +8,7 @@ import { healthRouter } from './routes/health.routes';
 import { authRouter } from './routes/auth.routes';
 import { visionRouter } from './routes/vision.routes';
 import { flywheelRouter } from './routes/flywheel.routes';
+import { referenceRouter } from './routes/reference.routes';
 
 export function createApp(): Express {
   const app = express();
@@ -49,6 +50,7 @@ export function createApp(): Express {
   app.use('/api/v1', apiRateLimiter);
   app.use('/api/v1/auth', authRouter);
   app.use('/api/v1/vision', visionRouter);
+  app.use('/api/v1/reference-tables', referenceRouter);
   // Hidden — not published in the API contract.
   app.use('/api/v1/flywheel', flywheelRouter);
 

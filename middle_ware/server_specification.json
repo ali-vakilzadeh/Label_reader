@@ -7,8 +7,8 @@
     "concurrent_clients": 10,
     "spec_version": "2.0",
     "companion_documents": {
-      "api_contract.md": "v1.2 - locked contract with the Android client (async 202-always; client reference vocabularies)",
-      "UI_messaging_protocol.md": "v1.3 - middleware <-> dashboard channel over control.db",
+      "api_contract.md": "v1.3 - locked contract with the Android client (async 202-always; client reference vocabularies; GET /api/v1/reference-tables serves English+Armenian+id so the app can display Armenian while storing English)",
+      "UI_messaging_protocol.md": "v1.4 - middleware <-> dashboard channel over control.db, including supervisor-decided taxonomy changes (reference_data_requests)",
       "dev_report.md": "implementation reference, deploy runbook, open gaps"
     }
   },
@@ -49,8 +49,13 @@
     },
     {
       "method": "GET",
+      "path": "/api/v1/reference-tables",
+      "notes": "The seven client taxonomy tables as {en, hy, id}. ETagged on a content fingerprint; 304 when the device is current, ~60 KB otherwise. This is what lets an operator work in Armenian: the app displays hy and stores en. Nothing is translated at runtime."
+    },
+    {
+      "method": "GET",
       "path": "/health",
-      "notes": "Unauthenticated. Reports api_contract revision and gemini_ready."
+      "notes": "Unauthenticated. Reports api_contract revision, gemini_ready, and reference_version (fingerprint of the taxonomy vocabulary currently served)."
     },
     {
       "method": "PUT",
@@ -121,7 +126,24 @@
     },
     "source_of_truth": "middle_ware/reference_data/*.csv - the client's tables (armenian, id, english), shipped with the server and edited by hand. Exported from docs/client_data/Translations-Cleaned.xlsx, which is NOT published with the middleware.",
     "middleware_files": "middle_ware/reference_data/*.csv, read at boot by src/data/referenceTables.ts which takes only the English column. A missing table throws at boot. src/data/taxonomy/enums.json holds category only (no client table exists for it).",
-    "dashboard_files": "The same CSVs. Armenian text and numeric ids are DASHBOARD-ONLY; the middleware neither stores nor emits them.",
-    "customs_codes": "Dashboard-only. The middleware has no involvement with customs codes, and the taxonomy ids are not customs codes."
+    "dashboard_files": "The same CSVs. Armenian text and numeric ids are owned by the dashboard for legal and presentational output. The middleware never stores or emits them in scan data, but does SERVE them to the Android app via GET /api/v1/reference-tables so the operator can read and choose in Armenian.",
+    "customs_codes": "Dashboard-only. The middleware has no involvement with customs codes, and the taxonomy ids are not customs codes.",
+    "language_policy": {
+      "rule": "The application never translates. It looks up, or it returns the English word.",
+      "canonical_language": "English. Extraction, storage, transport and the CSV ledger are English only, including when the operator works entirely in Armenian.",
+      "operator_language": "Armenian, resolved on the device by looking the English key up in the served reference table. A row with no Armenian renders as the English word - never blank, never machine translated, never transliterated.",
+      "rationale": "A model asked to answer in Armenian, or a runtime translation, returns a different wording of the same term on different scans. Those variants are stored as distinct values and cannot be grouped, filtered or totalled. One canonical English key with one Armenian label attached is what makes Armenian reporting possible.",
+      "english_only_fields": "brand and country are written in English everywhere including the paperwork (client decision 2026-08-30); their CSVs have no Armenian column. size and original_price are free text and are never translated in either direction.",
+      "ai_translation": "The model is asked to translate in exactly one place: collapsing a multilingual fibre composition to its single English wording. Nowhere else, and never into Armenian."
+    },
+    "maintenance": {
+      "writer": "The middleware is the ONLY process that writes reference_data/*.csv.",
+      "channel": "The dashboard proposes changes by inserting into reference_data_requests in control.db; the middleware validates and applies them. See UI_messaging_protocol.md v1.4 section 9.2.",
+      "actions": "SET_ARMENIAN (fill or correct the Armenian label of an existing row) and ADD_ENTRY (append a new row). Additive only.",
+      "immutability": "An English key is never renamed and never deleted. It is the join carried by every stored scan, every dashboard *_id lookup and every export already delivered.",
+      "rejection_behaviour": "A rejected request writes nothing and reports a reason. A wrong Armenian term on a customs declaration is worse than a missing one.",
+      "durability": "Writes are atomic (temp file then rename) and preserve BOM, line endings, column order and quoting; the replaced file is kept under reference_data/.backups/ (last 20 per table).",
+      "live_reload": "Applying a change re-reads every CSV, rebuilds the fuzzy-matcher indexes in place, and regenerates the constrained-enum lists in the AI prompt. No restart. A failed re-read leaves the previous tables in force and raises REFERENCE_DATA_UNREADABLE."
+    }
   }
 }
