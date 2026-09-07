@@ -52,15 +52,20 @@ export const BARCODE_FORMATS = [
 /** Two-dimensional formats, read only when the operator turns the QR reader on. */
 export const QR_FORMATS = ['qr_code', 'data_matrix'] as const;
 
+export type BarcodeFormat = (typeof BARCODE_FORMATS)[number];
+export type QrFormat = (typeof QR_FORMATS)[number];
+/** Narrower than `string[]`, so the ponyfill's own format union accepts it directly. */
+export type ScanFormat = BarcodeFormat | QrFormat;
+
 export type ScanKind = 'barcode' | 'qr';
 
-const FORMATS_FOR: Record<ScanKind, readonly string[]> = {
+const FORMATS_FOR: Record<ScanKind, readonly ScanFormat[]> = {
   barcode: BARCODE_FORMATS,
   qr: QR_FORMATS
 };
 
 type NativeDetectorCtor = {
-  new (options?: { formats?: string[] }): BarcodeScanner;
+  new (options?: { formats?: ScanFormat[] }): BarcodeScanner;
   getSupportedFormats?: () => Promise<string[]>;
 };
 
