@@ -14,11 +14,12 @@ import {
 import { ScanDao, LedgerDao } from '../data/db';
 import { syncEngine } from '../services/syncEngine';
 import { ReviewDetailModal } from '../components/ReviewDetailModal';
-import type { ScanEntity } from '../types/models';
+import type { ShowToast } from '../App';
+import type { GarmentFields, ScanEntity } from '../types/models';
 
 interface ReviewScreenProps {
   onNavigateToCapture: () => void;
-  showToast: (type: 'success' | 'warning' | 'error' | 'info', message: string, title?: string) => void;
+  showToast: ShowToast;
 }
 
 export const ReviewScreen: React.FC<ReviewScreenProps> = ({ onNavigateToCapture, showToast }) => {
@@ -60,23 +61,7 @@ export const ReviewScreen: React.FC<ReviewScreenProps> = ({ onNavigateToCapture,
     }
   };
 
-  const handleSaveVerified = async (
-    scan: ScanEntity,
-    verifiedData: {
-      category: string;
-      subCategory: string;
-      gender: string;
-      season: string;
-      brandName: string;
-      countryOfOrigin: string;
-      size: string;
-      color: string;
-      material: string;
-      originalPrice: string;
-      netto: string;
-      brutto: string;
-    }
-  ) => {
+  const handleSaveVerified = async (scan: ScanEntity, verified: GarmentFields) => {
     const today = new Date().toISOString().split('T')[0];
 
     await LedgerDao.insertLedgerItem({
@@ -84,18 +69,11 @@ export const ReviewScreen: React.FC<ReviewScreenProps> = ({ onNavigateToCapture,
       userId: scan.userId,
       timestamp: Date.now(),
       createdDate: today,
-      category: verifiedData.category,
-      subCategory: verifiedData.subCategory,
-      gender: verifiedData.gender,
-      season: verifiedData.season,
-      brandName: verifiedData.brandName,
-      countryOfOrigin: verifiedData.countryOfOrigin,
-      size: verifiedData.size,
-      color: verifiedData.color,
-      material: verifiedData.material,
-      originalPrice: verifiedData.originalPrice,
-      netto: verifiedData.netto,
-      brutto: verifiedData.brutto,
+      fields: verified,
+      // Operator input, carried from the capture screen and the review dialog. Neither
+      // ever crossed the API (contract section 8.5); the device is their only home.
+      packageCode: scan.packageCode,
+      setSize: scan.setSize,
       photos: scan.photos,
       keyPhotoIndex: scan.keyPhotoIndex,
       isVerified: true,
@@ -104,13 +82,9 @@ export const ReviewScreen: React.FC<ReviewScreenProps> = ({ onNavigateToCapture,
       submittedToCsv: false
     });
 
-    // Mark scan as verified
-    await ScanDao.updateScan({
-      ...scan,
-      status: 2 // VERIFIED_SAVED
-    });
+    await ScanDao.updateScan({ ...scan, status: 2 });
 
-    showToast('success', `Item ${scan.apparelId} verified and added to Daily Ledger!`, 'Verified & Saved');
+    showToast('success', `${scan.apparelId} verified and added to the ledger.`, 'Verified & Saved');
   };
 
   return (
@@ -237,23 +211,23 @@ export const ReviewScreen: React.FC<ReviewScreenProps> = ({ onNavigateToCapture,
                     </div>
 
                     <div className="text-sm font-bold text-[#2A1D14] truncate">
-                      {scan.extractedBrandName || 'Unknown Brand'} • {scan.extractedSubCategory || scan.extractedCategory || 'Apparel'}
+                      {scan.extracted.brandName || 'Unknown Brand'} • {scan.extracted.subCategory || scan.extracted.category || 'Apparel'}
                     </div>
 
                     <div className="flex items-center gap-2 text-xs text-[#6B5442] flex-wrap">
-                      {scan.extractedSize && (
+                      {scan.extracted.size && (
                         <span className="px-2 py-0.5 rounded-md bg-[#F4EADA] font-semibold text-[#2A1D14]">
-                          Size: {scan.extractedSize}
+                          Size: {scan.extracted.size}
                         </span>
                       )}
-                      {scan.extractedColor && (
+                      {scan.extracted.color && (
                         <span className="px-2 py-0.5 rounded-md bg-[#F4EADA] font-semibold text-[#2A1D14]">
-                          Color: {scan.extractedColor}
+                          Color: {scan.extracted.color}
                         </span>
                       )}
-                      {scan.extractedOriginalPrice && (
+                      {scan.extracted.originalPrice && (
                         <span className="px-2 py-0.5 rounded-md bg-[#F4EADA] font-semibold text-[#86611F]">
-                          {scan.extractedOriginalPrice}
+                          {scan.extracted.originalPrice}
                         </span>
                       )}
                     </div>

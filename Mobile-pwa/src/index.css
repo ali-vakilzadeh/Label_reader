@@ -1,57 +1,136 @@
 @import "tailwindcss";
 
+/**
+ * OutFit design system, as applied to the Label Reader in
+ * Mobile_app/Label_reader_design_basis.html.
+ *
+ * Cream page, navy chrome and ink, gold accent. The pairing is fixed - no dynamic
+ * colour, no tonal palettes. Declared as a Tailwind v4 @theme so the hexes are
+ * reachable as utilities (bg-navy-900, text-cocoa-600) instead of being retyped as
+ * arbitrary values at every call site.
+ */
+@theme {
+  /* Surfaces */
+  --color-cream-50: #fefcf7;   /* card, chrome, tab bar */
+  --color-cream-100: #fbf7ee;  /* page */
+  --color-cream-200: #f6f0e2;  /* sunken strip, payload block */
+  --color-cream-300: #efe6d3;  /* locked row */
+  --color-gold-100: #fbf3dd;   /* review block, active tab */
+
+  /* Navy - chrome, primary action, ink */
+  --color-navy-950: #08182c;
+  --color-navy-900: #0f2439;
+  --color-navy-800: #163150;
+  --color-navy-700: #1d4068;
+
+  /* Cocoa - labels, hints, rules */
+  --color-cocoa-100: #ebe0cd;  /* hairline */
+  --color-cocoa-200: #ddccb2;  /* default border */
+  --color-cocoa-400: #ab8c6d;  /* hints, placeholder, disabled, strong border */
+  --color-cocoa-600: #6b503a;  /* labels, muted meta */
+
+  /* Gold */
+  --color-gold-200: #f5e5bd;   /* focus ring */
+  --color-gold-500: #c69426;   /* accent border, brackets */
+  --color-gold-600: #a8791a;   /* focus outline */
+  --color-gold-700: #96650f;   /* warning ink, low-confidence hint */
+  --color-gold-wordmark: #dcb055;
+
+  /* Status. Colour never arrives alone - always a dot or a border plus a word. */
+  --color-critical: #9e2b1e;
+  --color-warning: #96650f;
+  --color-good: #1f6b4a;
+  --color-info: #1d4f8f;
+  --color-neutral: #7b6a58;
+
+  /* Radii: control / container / modal */
+  --radius-control: 8px;
+  --radius-container: 10px;
+  --radius-modal: 14px;
+
+  --shadow-card: 0 1px 2px #4d3a2a0f;
+  --shadow-overlay: 0 6px 18px #0f24391f;
+}
+
 @layer base {
   :root {
-    --color-ls-creme: #FBF6EC;
-    --color-ls-linen: #FFFDF9;
-    --color-ls-beige-100: #F4EADA;
-    --color-ls-beige-200: #EFE0CB;
-    --color-ls-beige-300: #E6D8C1;
-    --color-ls-cocoa-900: #2A1D14;
-    --color-ls-cocoa-700: #4D3B2C;
-    --color-ls-cocoa-600: #6B5442;
-    --color-ls-cocoa-500: #7D6650;
-    --color-ls-cocoa-300: #B39F8C;
-    --color-ls-gold-900: #684A15;
-    --color-ls-gold-800: #86611F;
-    --color-ls-gold-600: #A87C2E;
-    --color-ls-gold-500: #BF9445;
-    --color-ls-gold-200: #E9D3A5;
-    --color-ls-gold-wash: rgba(191, 148, 69, 0.14);
-    --color-ls-rust-700: #B4531B;
-    --color-ls-rust-500: #D2691E;
-    --color-ls-rust-200: #F0CBAF;
-    --color-ls-rust-50: #FCEFE6;
+    /* Camera scrim, navy-950 at 35%. */
+    --camera-scrim: #08182c59;
+    /* 120ms cubic-bezier(.2,0,.2,1) everywhere; zeroed under reduced motion below. */
+    --motion-fast: 120ms;
+    --motion-ease: cubic-bezier(0.2, 0, 0.2, 1);
+  }
+
+  html {
+    /* The system's rem scale is tuned for 16px on mobile; nothing else changes. */
+    font-size: 16px;
   }
 
   body {
-    background-color: var(--color-ls-creme);
-    color: var(--color-ls-cocoa-900);
-    font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+    background-color: var(--color-cream-100);
+    color: var(--color-navy-800);
+    font-family: 'Noto Sans', 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI',
+      Roboto, sans-serif;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
-    padding-top: env(safe-area-inset-top, 0px);
-    padding-bottom: env(safe-area-inset-bottom, 0px);
-    padding-left: env(safe-area-inset-left, 0px);
-    padding-right: env(safe-area-inset-right, 0px);
+    /*
+     * Safe-area padding is NOT applied here. Fixed chrome (the brand bar, the tab bar,
+     * the full-screen camera) ignores padding on body, which is exactly how the top and
+     * bottom bands ended up under the notch and the home indicator. Each fixed element
+     * pads itself instead - see .safe-top / .safe-bottom below.
+     */
+  }
+
+  /* Focus is a 2px gold outline with a 3px ring, offset 1px. It is never removed. */
+  :focus-visible {
+    outline: 2px solid var(--color-gold-600);
+    outline-offset: 1px;
+    box-shadow: 0 0 0 3px var(--color-gold-200);
   }
 }
 
-/* Custom scrollbars */
+@layer utilities {
+  /* Fixed chrome pads itself out of the notch and the home indicator. */
+  .safe-top {
+    padding-top: env(safe-area-inset-top, 0px);
+  }
+  .safe-bottom {
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  .safe-x {
+    padding-left: env(safe-area-inset-left, 0px);
+    padding-right: env(safe-area-inset-right, 0px);
+  }
+  /* Scroll containers reserve room so content can clear the fixed bars. */
+  .pb-safe-nav {
+    padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 5.5rem);
+  }
+}
+
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
 }
 ::-webkit-scrollbar-track {
-  background: #F4EADA;
+  background: var(--color-cream-200);
 }
 ::-webkit-scrollbar-thumb {
-  background: #BF9445;
+  background: var(--color-cocoa-400);
   border-radius: 4px;
 }
 
-/* iOS Safari bounce prevention and crisp rendering */
-html, body {
+html,
+body {
   height: 100%;
   overscroll-behavior-y: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }

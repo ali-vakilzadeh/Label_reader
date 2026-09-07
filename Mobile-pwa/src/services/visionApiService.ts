@@ -4,44 +4,54 @@ import type {
   ConnectionValidationResult,
   HealthResponse,
   LoginResponse,
-  ScanEntity,
-  VisionExtraction
+  ScanEntity
 } from '../types/models';
-import { loadSettings, saveSettings } from '../data/settingsStorage';
+import type { ReferenceTablesResponse } from '../data/referenceTables';
+import { hasCredentials, loadSettings, saveSettings } from '../data/settingsStorage';
+
+/** The contract revision this client is written against. */
+export const TARGET_API_CONTRACT = '1.4';
+
+/**
+ * 401s the operator cannot retry their way out of. ACCOUNT_DISABLED needs a
+ * supervisor; the rest mean "log in again" (contract section 4.1).
+ */
+const AUTH_ERROR_CODES = new Set(['ACCOUNT_DISABLED', 'TOKEN_REVOKED', 'INVALID_TOKEN', 'TOKEN_EXPIRED']);
 
 export class VisionApiService {
   /**
-   * Acquire or refresh JWT device token
+   * Acquire or refresh the JWT. Returns null when the device has no credentials at
+   * all, which is a configuration state rather than a failure - the app routes the
+   * operator to Settings instead of retrying.
    */
   static async getAuthToken(forceRefresh = false): Promise<string | null> {
     const settings = loadSettings();
-    if (!forceRefresh && settings.sessionToken) {
-      return settings.sessionToken;
-    }
+    if (!hasCredentials(settings)) return null;
+    if (!forceRefresh && settings.sessionToken) return settings.sessionToken;
 
     try {
-      const loginPayload = {
-        username: settings.userId.trim(),
-        user_id: settings.userId.trim(),
-        password: settings.devicePassword.trim()
-      };
-
       const res = await fetch(`${settings.serverUrl}/api/v1/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(loginPayload)
+        body: JSON.stringify({
+          username: settings.userId.trim(),
+          password: settings.devicePassword.trim()
+        })
       });
 
+      const data: LoginResponse = await res.json().catch(() => ({}) as LoginResponse);
+
       if (!res.ok) {
-        console.warn(`Auth failed with HTTP ${res.status}`);
+        if (data.error_code && AUTH_ERROR_CODES.has(data.error_code)) {
+          saveSettings({ sessionToken: undefined });
+        }
+        console.warn(`Auth failed: HTTP ${res.status} ${data.error_code ?? ''}`);
         return null;
       }
 
-      const data: LoginResponse = await res.json();
-      const token = data.token;
-      if (token) {
-        saveSettings({ sessionToken: token });
-        return token;
+      if (data.token) {
+        saveSettings({ sessionToken: data.token });
+        return data.token;
       }
       return null;
     } catch (err) {
@@ -50,63 +60,89 @@ export class VisionApiService {
     }
   }
 
-  /**
-   * Ping server health
-   */
+  /** `GET /health` - unauthenticated, so it works before login. */
   static async checkHealth(): Promise<{ ok: boolean; data?: HealthResponse; error?: string }> {
     const settings = loadSettings();
     try {
-      let res = await fetch(`${settings.serverUrl}/health`, { signal: AbortSignal.timeout(5000) });
-      if (!res.ok && res.status === 404) {
-        res = await fetch(`${settings.serverUrl}/api/v1/health`, { signal: AbortSignal.timeout(5000) });
-      }
-
-      if (res.ok) {
-        const data = await res.json();
-        return { ok: true, data };
-      }
+      const res = await fetch(`${settings.serverUrl}/health`, { signal: AbortSignal.timeout(5000) });
+      if (res.ok) return { ok: true, data: await res.json() };
       return { ok: false, error: `HTTP ${res.status}` };
     } catch (err) {
       return { ok: false, error: (err as Error).message || 'Connection failed' };
     }
   }
 
-  /**
-   * Full end-to-end diagnostic test
-   */
   static async testConnectionAndAuth(): Promise<ConnectionValidationResult> {
     const settings = loadSettings();
     const healthResult = await this.checkHealth();
-    const isHealthOk = healthResult.ok;
     const health = healthResult.data;
-
     const token = await this.getAuthToken(true);
-    const isAuthOk = !!token;
-    const isSuccess = isAuthOk || (isHealthOk && !!settings.sessionToken);
+    const isAuthOk = Boolean(token);
 
-    let errorReason: string | undefined;
-    if (!isHealthOk && !isAuthOk) {
-      errorReason = `Cannot reach middleware server at ${settings.serverUrl}. Please check host address, port, and network connection.`;
-    } else if (isHealthOk && !isAuthOk) {
-      errorReason = 'Server reached, but device credentials were rejected. Please verify Operator Username and Device Password.';
+    let errorMessage: string | undefined;
+    if (!healthResult.ok && !isAuthOk) {
+      errorMessage = `Cannot reach the middleware at ${settings.serverUrl}. Check the address, the port and the network.`;
+    } else if (healthResult.ok && !isAuthOk) {
+      errorMessage = hasCredentials(settings)
+        ? 'Server reached, but the credentials were rejected. Verify the operator username and password.'
+        : 'Server reached. Enter an operator username and password to sign in.';
     }
 
+    // A server older than the contract still works - care_info and data_hy simply
+    // arrive empty - but the operator should know why those fields stay blank.
+    const served = health?.api_contract;
+    const contractWarning =
+      served && served !== TARGET_API_CONTRACT
+        ? `Server implements contract ${served}; this app targets ${TARGET_API_CONTRACT}. CareInfo and Armenian AI labels stay empty until the middleware is updated.`
+        : undefined;
+
     return {
-      isSuccessful: isSuccess,
-      isHealthOk,
+      isSuccessful: isAuthOk,
+      isHealthOk: healthResult.ok,
       isAuthOk,
-      serverVersion: health?.version || '1.0.0',
-      uptimeSeconds: health?.uptime_seconds || health?.uptimeSeconds || 0,
-      geminiReady: health?.gemini_ready || health?.geminiConfigured || false,
+      serverVersion: health?.version,
+      apiContract: served,
+      uptimeSeconds: health?.uptime_seconds,
+      geminiReady: Boolean(health?.gemini_ready),
       username: settings.userId,
       tokenPreview: token ? `${token.substring(0, 14)}...` : undefined,
-      errorMessage: errorReason
+      errorMessage,
+      contractWarning
     };
   }
 
   /**
-   * Convert data URL / Blob to File object for multipart form upload
+   * `GET /api/v1/reference-tables`. A 304 means the cached copy is current; a 404
+   * means the server predates v1.3 and the app stays on its bundled tables.
    */
+  static async fetchReferenceTables(
+    cachedVersion?: string
+  ): Promise<{ ok: boolean; notModified?: boolean; payload?: ReferenceTablesResponse; error?: string }> {
+    const settings = loadSettings();
+    const token = await this.getAuthToken();
+    if (!token) return { ok: false, error: 'Not signed in.' };
+
+    try {
+      const headers: Record<string, string> = { Authorization: `Bearer ${token}` };
+      if (cachedVersion) headers['If-None-Match'] = `"${cachedVersion}"`;
+
+      const res = await fetch(`${settings.serverUrl}/api/v1/reference-tables`, {
+        headers,
+        signal: AbortSignal.timeout(20000)
+      });
+
+      if (res.status === 304) return { ok: true, notModified: true };
+      if (res.status === 404) {
+        return { ok: false, error: 'This server does not serve reference tables (contract v1.2 or earlier).' };
+      }
+      if (!res.ok) return { ok: false, error: `HTTP ${res.status}` };
+
+      return { ok: true, payload: (await res.json()) as ReferenceTablesResponse };
+    } catch (err) {
+      return { ok: false, error: (err as Error).message || 'Network error' };
+    }
+  }
+
   private static async dataUrlToFile(dataUrl: string, filename: string): Promise<File> {
     const res = await fetch(dataUrl);
     const blob = await res.blob();
@@ -114,167 +150,101 @@ export class VisionApiService {
   }
 
   /**
-   * Submit scan with up to 8 images for Gemini extraction
+   * `POST /api/v1/vision/extract`. The request carries exactly the five fields the
+   * contract defines - PackageCode and SetSize are deliberately not among them
+   * (section 8.5): they are operator input and never cross this API.
    */
-  static async submitVisionExtract(scan: ScanEntity, clonedFrom?: string): Promise<{ ok: boolean; response?: AsyncVisionResponse; error?: string }> {
+  static async submitVisionExtract(
+    scan: ScanEntity,
+    clonedFrom?: string
+  ): Promise<{ ok: boolean; response?: AsyncVisionResponse; error?: string }> {
     const settings = loadSettings();
-
-    // If demo mode is on, return local synthetic output
-    if (settings.demoModeEnabled) {
-      const synthetic = this.generateSyntheticExtraction(scan.apparelId);
-      return {
-        ok: true,
-        response: {
-          status: 'success',
-          apparel_id: scan.apparelId,
-          processing_status: 'READY_TO_CONFIRM',
-          data: {
-            brand_name: synthetic.brandName,
-            category: synthetic.category,
-            sub_category: synthetic.subCategory,
-            gender: synthetic.gender,
-            season: synthetic.season,
-            size: synthetic.size,
-            color: synthetic.color,
-            material: synthetic.material,
-            country_of_origin: synthetic.countryOfOrigin,
-            original_price: synthetic.originalPrice,
-            netto: synthetic.netto,
-            brutto: synthetic.brutto
-          }
-        }
-      };
-    }
 
     let token = await this.getAuthToken();
     if (!token) {
-      return { ok: false, error: 'AUTH_REQUIRED: Invalid device credentials or server unreachable' };
+      return { ok: false, error: 'AUTH_REQUIRED: sign in on the Settings screen.' };
     }
 
     try {
-      const formData = new FormData();
-      formData.append('apparel_id', scan.apparelId);
-      formData.append('username', settings.userId);
-      formData.append('key_photo_index', String(scan.keyPhotoIndex));
-      if (clonedFrom) {
-        formData.append('cloned_from', clonedFrom);
-      }
+      const buildForm = async () => {
+        const formData = new FormData();
+        formData.append('apparel_id', scan.apparelId);
+        formData.append('username', settings.userId);
+        formData.append('key_photo_index', String(scan.keyPhotoIndex));
+        if (clonedFrom) formData.append('cloned_from', clonedFrom);
 
-      // Append up to 8 photos
-      for (let i = 0; i < Math.min(scan.photos.length, 8); i++) {
-        const photoData = scan.photos[i];
-        if (photoData) {
-          const file = await this.dataUrlToFile(photoData, `IMG_${scan.apparelId}_${i + 1}.jpg`);
-          formData.append('images', file);
+        // A clone needs no images; the server copies the parent record.
+        if (!clonedFrom) {
+          for (let i = 0; i < Math.min(scan.photos.length, 8); i++) {
+            const photoData = scan.photos[i];
+            if (photoData) {
+              formData.append('images', await this.dataUrlToFile(photoData, `IMG_${scan.apparelId}_${i + 1}.jpg`));
+            }
+          }
         }
-      }
+        return formData;
+      };
 
-      let res = await fetch(`${settings.serverUrl}/api/v1/vision/extract`, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${token}`
-        },
-        body: formData
-      });
+      const post = (bearer: string, body: FormData) =>
+        fetch(`${settings.serverUrl}/api/v1/vision/extract`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${bearer}` },
+          body
+        });
 
-      // Handle 401 token refresh
+      // A FormData body is consumed by the first send, so the retry rebuilds it.
+      let res = await post(token, await buildForm());
+
       if (res.status === 401) {
-        token = await this.getAuthToken(true);
-        if (token) {
-          res = await fetch(`${settings.serverUrl}/api/v1/vision/extract`, {
-            method: 'POST',
-            headers: {
-              Authorization: `Bearer ${token}`
-            },
-            body: formData
-          });
+        const refreshed = await this.getAuthToken(true);
+        if (refreshed) {
+          token = refreshed;
+          res = await post(refreshed, await buildForm());
         }
       }
 
       if (res.status >= 200 && res.status < 300) {
-        const body: AsyncVisionResponse = await res.json();
-        return { ok: true, response: body };
+        return { ok: true, response: (await res.json()) as AsyncVisionResponse };
       }
 
-      const errText = await res.text();
-      return { ok: false, error: `HTTP ${res.status}: ${errText}` };
+      const body = await res.json().catch(() => null);
+      const code = body?.error_code ? `${body.error_code}: ` : '';
+      return { ok: false, error: `${code}${body?.message || `HTTP ${res.status}`}` };
     } catch (err) {
       return { ok: false, error: (err as Error).message || 'Transport failure' };
     }
   }
 
-  /**
-   * Batch poll results for scans waiting on AI
-   */
-  static async getBatchVisionResults(apparelIds: string[]): Promise<{ ok: boolean; response?: BatchVisionResultsResponse; error?: string }> {
+  /** `GET /api/v1/vision/results?ids=` - the batch form, capped at 100 ids. */
+  static async getBatchVisionResults(
+    apparelIds: string[]
+  ): Promise<{ ok: boolean; response?: BatchVisionResultsResponse; error?: string }> {
     if (apparelIds.length === 0) {
       return { ok: true, response: { status: 'success', results: [] } };
     }
 
     const settings = loadSettings();
     let token = await this.getAuthToken();
-    if (!token) {
-      return { ok: false, error: 'AUTH_REQUIRED: Invalid session token' };
-    }
+    if (!token) return { ok: false, error: 'AUTH_REQUIRED: sign in on the Settings screen.' };
 
     try {
       const idsParam = encodeURIComponent(apparelIds.slice(0, 100).join(','));
-      let res = await fetch(`${settings.serverUrl}/api/v1/vision/results?ids=${idsParam}`, {
-        method: 'GET',
-        headers: {
-          Authorization: `Bearer ${token}`
-        }
-      });
+      const url = `${settings.serverUrl}/api/v1/vision/results?ids=${idsParam}`;
+      const get = (bearer: string) => fetch(url, { headers: { Authorization: `Bearer ${bearer}` } });
 
+      let res = await get(token);
       if (res.status === 401) {
-        token = await this.getAuthToken(true);
-        if (token) {
-          res = await fetch(`${settings.serverUrl}/api/v1/vision/results?ids=${idsParam}`, {
-            method: 'GET',
-            headers: {
-              Authorization: `Bearer ${token}`
-            }
-          });
+        const refreshed = await this.getAuthToken(true);
+        if (refreshed) {
+          token = refreshed;
+          res = await get(refreshed);
         }
       }
 
-      if (res.ok) {
-        const data: BatchVisionResultsResponse = await res.json();
-        return { ok: true, response: data };
-      }
-
+      if (res.ok) return { ok: true, response: (await res.json()) as BatchVisionResultsResponse };
       return { ok: false, error: `Batch poll HTTP ${res.status}` };
     } catch (err) {
       return { ok: false, error: (err as Error).message || 'Batch poll network error' };
     }
-  }
-
-  /**
-   * High-fidelity local synthetic generator for demo mode & offline fallback testing
-   */
-  static generateSyntheticExtraction(_barcode: string): VisionExtraction {
-    const brands = ['Zara', 'Nike', "Levi'S", 'Adidas', 'H&M', 'Massimo Dutti', 'Mango', 'Puma', 'Tommy Hilfiger', 'Calvin Klein'];
-    const subCategories = ['T-shirt', 'Trousers', 'Hoodie', 'Shirt', 'Dress', 'Jeans', 'Jacket', 'Sweater', 'Shorts', 'Skirt'];
-    const materials = ['Cotton', 'Polyester', 'Wool', 'Silk', 'Linen', 'Viscose', 'Elastane', 'Denim'];
-    const countries = ['PORTUGAL', 'VIETNAM', 'ITALY', 'TURKEY', 'BANGLADESH', 'CHINA', 'SPAIN', 'INDIA'];
-    const colors = ['Blue - Navy', 'Black', 'White', 'Grey', 'Dark red', 'Khaki', 'Green', 'Brown'];
-    const sizes = ['XS', 'S', 'M', 'L', 'XL', 'XXL', '38', '40', '42'];
-
-    const pick = (arr: string[]) => arr[Math.floor(Math.random() * arr.length)];
-
-    return {
-      brandName: { value: pick(brands), confidence: 0.95 },
-      category: { value: 'clothing', confidence: 0.92 },
-      subCategory: { value: pick(subCategories), confidence: 0.89 },
-      gender: { value: 'Men', confidence: 0.90 },
-      season: { value: 'All Seasons', confidence: 0.85 },
-      size: { value: pick(sizes), confidence: 0.92 },
-      color: { value: pick(colors), confidence: 0.89 },
-      material: { value: pick(materials), confidence: 0.88 },
-      countryOfOrigin: { value: pick(countries), confidence: 0.85 },
-      originalPrice: { value: '€49.95', confidence: 0.80 },
-      netto: { value: '260g', confidence: 0.65 }, // < 0.70 triggers review highlight
-      brutto: { value: '290g', confidence: 0.60 }  // < 0.70 triggers review highlight
-    };
   }
 }

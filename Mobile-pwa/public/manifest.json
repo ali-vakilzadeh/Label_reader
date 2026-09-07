@@ -6,8 +6,8 @@
   "id": "./",
   "display": "standalone",
   "orientation": "portrait-primary",
-  "background_color": "#FBF6EC",
-  "theme_color": "#86611F",
+  "background_color": "#fbf7ee",
+  "theme_color": "#0f2439",
   "scope": "./",
   "icons": [
     {
@@ -28,6 +28,10 @@
       "type": "image/png"
     }
   ],
-  "categories": ["business", "productivity", "utilities"],
+  "categories": [
+    "business",
+    "productivity",
+    "utilities"
+  ],
   "screenshots": []
 }

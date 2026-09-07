@@ -9,17 +9,20 @@ import {
   Clock,
   Layers,
   Tag,
-  Camera
+  Camera,
+  Lock
 } from 'lucide-react';
 import { LedgerDao } from '../data/db';
 import { syncEngine } from '../services/syncEngine';
 import { CsvCutoffDialog } from '../components/CsvCutoffDialog';
 import { DuplicateModal } from '../components/DuplicateModal';
-import type { DailyLedgerEntity } from '../types/models';
+import { ExportBlockedError, NothingToExportError } from '../services/csvExport';
+import { isLedgerItemLocked, type DailyLedgerEntity } from '../types/models';
+import type { ShowToast } from '../App';
 
 interface DailyLedgerScreenProps {
   onNavigateToCapture: () => void;
-  showToast: (type: 'success' | 'warning' | 'error' | 'info', message: string, title?: string) => void;
+  showToast: ShowToast;
 }
 
 export const DailyLedgerScreen: React.FC<DailyLedgerScreenProps> = ({
@@ -41,20 +44,34 @@ export const DailyLedgerScreen: React.FC<DailyLedgerScreenProps> = ({
   // Live queries
   const activeLedger = useLiveQuery(() => LedgerDao.getActiveLedger(), []) || [];
   const allLedgerHistory = useLiveQuery(() => LedgerDao.getAllLedgerHistory(), []) || [];
+  // Only rows that have never been written into a file can go into the next one.
+  const exportableCount = useLiveQuery(() => LedgerDao.getUnexportedLedger(), [])?.length ?? 0;
 
   const handleExportCsv = async () => {
-    if (activeLedger.length === 0) {
-      showToast('warning', 'No active items in the current session to export.', 'Session Empty');
-      return;
-    }
-
     setIsExporting(true);
     try {
       const exportResult = await syncEngine.generateAndDownloadCsv();
       showToast('success', `Exported ${exportResult.count} garments to ${exportResult.filename}`, 'CSV Downloaded');
+
+      // The gate was Off and rows went out short. Say so plainly rather than
+      // letting an incomplete file leave quietly.
+      if (exportResult.incomplete.length > 0) {
+        showToast(
+          'warning',
+          `${exportResult.incomplete.length} record(s) were exported with blank columns.`,
+          'Incomplete Records'
+        );
+      }
       setCsvDialogData(exportResult);
     } catch (err) {
-      showToast('error', (err as Error).message || 'Export failed', 'Export Error');
+      const error = err as Error;
+      if (error instanceof ExportBlockedError) {
+        showToast('error', `${error.message} Complete them, or turn the export gate off in Settings.`, 'Export Blocked');
+      } else if (error instanceof NothingToExportError) {
+        showToast('warning', error.message, 'Nothing to Export');
+      } else {
+        showToast('error', error.message || 'Export failed', 'Export Error');
+      }
     } finally {
       setIsExporting(false);
     }
@@ -67,6 +84,11 @@ export const DailyLedgerScreen: React.FC<DailyLedgerScreenProps> = ({
 
   const handleDeleteItem = async (apparelId: string, e: React.MouseEvent) => {
     e.stopPropagation();
+    const item = await LedgerDao.getLedgerItemById(apparelId);
+    if (item && isLedgerItemLocked(item)) {
+      showToast('warning', `${apparelId} is already in an exported batch and cannot be deleted.`, 'Record Locked');
+      return;
+    }
     if (window.confirm(`Delete ledger entry for "${apparelId}"?`)) {
       await LedgerDao.deleteLedgerItem(apparelId);
       showToast('info', `Item ${apparelId} removed from ledger.`, 'Deleted');
@@ -86,7 +108,8 @@ export const DailyLedgerScreen: React.FC<DailyLedgerScreenProps> = ({
       submittedToCsv: false,
       exportedAt: undefined,
       exportBatchId: undefined,
-      submittedAt: undefined
+      submittedAt: undefined,
+      editedByUser: true
     };
 
     await LedgerDao.insertLedgerItem(duplicated);
@@ -111,11 +134,11 @@ export const DailyLedgerScreen: React.FC<DailyLedgerScreenProps> = ({
         <button
           type="button"
           onClick={handleExportCsv}
-          disabled={isExporting || activeLedger.length === 0}
+          disabled={isExporting || exportableCount === 0}
           className="flex items-center gap-2 px-4 py-2.5 rounded-2xl bg-[#86611F] hover:bg-[#A87C2E] text-white font-extrabold text-xs shadow-md transition-all active:scale-95 disabled:opacity-40 cursor-pointer"
         >
           <FileSpreadsheet className="w-4 h-4" />
-          <span>{isExporting ? 'Exporting...' : 'Export CSV'}</span>
+          <span>{isExporting ? 'Exporting…' : `Export CSV${exportableCount ? ` (${exportableCount})` : ''}`}</span>
         </button>
       </div>
 
@@ -224,6 +247,12 @@ export const DailyLedgerScreen: React.FC<DailyLedgerScreenProps> = ({
                         <CheckCircle2 className="w-3 h-3 text-[#166534]" />
                         SUBMITTED CSV ({item.exportBatchId || 'EXPORT'})
                       </span>
+                    ) : item.exportBatchId ? (
+                      /* Written into a file already, so read-only from here on. */
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-cream-300 text-cocoa-600 border border-cocoa-200 flex items-center gap-1">
+                        <Lock className="w-3 h-3" />
+                        EXPORTED · LOCKED ({item.exportBatchId})
+                      </span>
                     ) : (
                       <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-[#DCFCE7] text-[#166534] flex items-center gap-1">
                         <CheckCircle2 className="w-3 h-3" />
@@ -233,36 +262,36 @@ export const DailyLedgerScreen: React.FC<DailyLedgerScreenProps> = ({
                   </div>
 
                   <div className="text-sm font-extrabold text-[#2A1D14]">
-                    {item.brandName} • {item.subCategory} ({item.category})
+                    {item.fields.brandName} • {item.fields.subCategory} ({item.fields.category})
                   </div>
 
                   {/* Attributes Badges */}
                   <div className="flex items-center gap-1.5 text-[11px] text-[#6B5442] flex-wrap">
                     <span className="px-2 py-0.5 rounded-md bg-[#F4EADA] font-semibold text-[#2A1D14]">
-                      {item.gender}
+                      {item.fields.gender}
                     </span>
                     <span className="px-2 py-0.5 rounded-md bg-[#F4EADA] font-semibold text-[#2A1D14]">
-                      {item.season}
+                      {item.fields.season}
                     </span>
                     <span className="px-2 py-0.5 rounded-md bg-[#F4EADA] font-semibold text-[#2A1D14]">
-                      Size: {item.size || 'N/A'}
+                      Size: {item.fields.size || 'N/A'}
                     </span>
                     <span className="px-2 py-0.5 rounded-md bg-[#F4EADA] font-semibold text-[#2A1D14]">
-                      {item.color}
+                      {item.fields.color}
                     </span>
-                    {item.material && (
+                    {item.fields.material && (
                       <span className="px-2 py-0.5 rounded-md bg-[#F4EADA] font-semibold text-[#2A1D14] truncate max-w-[140px]">
-                        {item.material}
+                        {item.fields.material}
                       </span>
                     )}
-                    {item.countryOfOrigin && (
+                    {item.fields.countryOfOrigin && (
                       <span className="px-2 py-0.5 rounded-md bg-[#F4EADA] font-semibold text-[#2A1D14]">
-                        {item.countryOfOrigin}
+                        {item.fields.countryOfOrigin}
                       </span>
                     )}
-                    {item.originalPrice && (
+                    {item.fields.originalPrice && (
                       <span className="px-2 py-0.5 rounded-md bg-[#F4EADA] font-bold text-[#86611F]">
-                        {item.originalPrice}
+                        {item.fields.originalPrice}
                       </span>
                     )}
                   </div>
@@ -289,8 +318,9 @@ export const DailyLedgerScreen: React.FC<DailyLedgerScreenProps> = ({
                   <button
                     type="button"
                     onClick={(e) => handleDeleteItem(item.apparelId, e)}
-                    title="Delete Entry"
-                    className="p-2 rounded-xl text-[#7D6650] hover:text-red-600 hover:bg-red-50 transition-colors cursor-pointer"
+                    disabled={isLedgerItemLocked(item)}
+                    title={isLedgerItemLocked(item) ? 'Exported records are read-only' : 'Delete Entry'}
+                    className="p-2 rounded-xl text-[#7D6650] hover:text-red-600 hover:bg-red-50 transition-colors cursor-pointer disabled:opacity-30 disabled:hover:text-[#7D6650] disabled:hover:bg-transparent disabled:cursor-not-allowed"
                   >
                     <Trash2 className="w-4 h-4" />
                   </button>

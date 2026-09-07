@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
-import { Copy, X, Sparkles } from 'lucide-react';
+import { Copy, X } from 'lucide-react';
 import type { DailyLedgerEntity } from '../types/models';
-import { getNextDemoBarcode } from '../data/settingsStorage';
 
 interface DuplicateModalProps {
   sourceItem: DailyLedgerEntity;
@@ -41,11 +40,6 @@ export const DuplicateModal: React.FC<DuplicateModalProps> = ({
     }
   };
 
-  const handleGenRandom = () => {
-    setNewBarcode(getNextDemoBarcode());
-    setError(null);
-  };
-
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
       <div className="bg-[#FFFDF9] border border-[#E6D8C1] rounded-3xl w-full max-w-md p-6 flex flex-col gap-5 shadow-2xl">
@@ -77,9 +71,9 @@ export const DuplicateModal: React.FC<DuplicateModalProps> = ({
           <div className="font-bold text-[#2A1D14] flex items-center gap-2">
             <span className="font-mono text-[#86611F]">{sourceItem.apparelId}</span>
             <span>•</span>
-            <span>{sourceItem.brandName}</span>
+            <span>{sourceItem.fields.brandName}</span>
             <span>•</span>
-            <span>{sourceItem.subCategory} ({sourceItem.size})</span>
+            <span>{sourceItem.fields.subCategory} ({sourceItem.fields.size})</span>
           </div>
         </div>
 
@@ -88,27 +82,16 @@ export const DuplicateModal: React.FC<DuplicateModalProps> = ({
             <label className="text-xs font-semibold uppercase tracking-wider text-[#6B5442]">
               New Garment Barcode / ID
             </label>
-            <div className="flex items-center gap-2">
-              <input
-                type="text"
-                value={newBarcode}
-                onChange={(e) => {
-                  setNewBarcode(e.target.value);
-                  setError(null);
-                }}
-                placeholder="Scan or enter new barcode..."
-                className="flex-1 px-3.5 py-2.5 rounded-xl text-sm font-mono font-medium bg-[#FFFDF9] border border-[#E6D8C1] text-[#2A1D14] outline-none focus:border-[#86611F] focus:ring-1 focus:ring-[#86611F]"
-              />
-              <button
-                type="button"
-                onClick={handleGenRandom}
-                title="Generate Demo Barcode"
-                className="px-3 py-2.5 rounded-xl bg-[#F4EADA] hover:bg-[#E6D8C1] text-[#6B5442] text-xs font-semibold flex items-center gap-1 border border-[#E6D8C1] transition-colors"
-              >
-                <Sparkles className="w-3.5 h-3.5 text-[#BF9445]" />
-                Auto
-              </button>
-            </div>
+            <input
+              type="text"
+              value={newBarcode}
+              onChange={(e) => {
+                setNewBarcode(e.target.value);
+                setError(null);
+              }}
+              placeholder="Scan or enter new barcode..."
+              className="w-full px-3.5 py-2.5 rounded-xl text-sm font-mono font-medium bg-[#FFFDF9] border border-[#E6D8C1] text-[#2A1D14] outline-none focus:border-[#86611F] focus:ring-1 focus:ring-[#86611F]"
+            />
             {error && <div className="text-xs text-[#B4531B] font-medium">{error}</div>}
           </div>
 

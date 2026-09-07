@@ -1,5 +1,5 @@
 import React, { useRef, useState, useEffect } from 'react';
-import { Camera, Zap, ZapOff, Upload, Sparkles, RefreshCw, ScanBarcode } from 'lucide-react';
+import { Camera, Zap, ZapOff, Upload, RefreshCw, ScanBarcode } from 'lucide-react';
 import { getBarcodeScanner } from '../services/barcodeScanner';
 import type { BarcodeScanner, ScannerEngine } from '../services/barcodeScanner';
 
@@ -89,7 +89,7 @@ export const CameraViewfinder: React.FC<CameraViewfinderProps> = ({
           : (err as Error).name === 'NotFoundError'
             ? 'No camera device was found.'
             : (err as Error).message || 'Camera unavailable.';
-      setCameraError(`${reason} You can upload photos from the gallery or use the synthetic sample generator.`);
+      setCameraError(`${reason} You can still import photos from the gallery.`);
       setIsLive(false);
     }
   };
@@ -238,100 +238,6 @@ export const CameraViewfinder: React.FC<CameraViewfinderProps> = ({
     e.target.value = '';
   };
 
-  // Generate realistic sample care label canvas
-  const generateSampleLabel = () => {
-    const canvas = document.createElement('canvas');
-    canvas.width = 800;
-    canvas.height = 1000;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-
-    // Background fabric texture
-    ctx.fillStyle = '#FAF7F2';
-    ctx.fillRect(0, 0, 800, 1000);
-
-    // Label border & stitching effect
-    ctx.strokeStyle = '#D5C4A1';
-    ctx.lineWidth = 4;
-    ctx.setLineDash([8, 6]);
-    ctx.strokeRect(30, 30, 740, 940);
-    ctx.setLineDash([]);
-
-    // Brand Name
-    ctx.fillStyle = '#2A1D14';
-    ctx.font = 'bold 44px Inter, sans-serif';
-    ctx.textAlign = 'center';
-    const brands = ['ZARA ENTERPRISE', 'MASSIMO DUTTI', 'LEVI STRAUSS & CO.', 'ECOWEAVE ATELIER', 'NORDIC LINEN'];
-    const brand = brands[Math.floor(Math.random() * brands.length)];
-    ctx.fillText(brand, 400, 120);
-
-    // Subheader
-    ctx.font = '500 24px Inter, sans-serif';
-    ctx.fillStyle = '#6B5442';
-    ctx.fillText('COLLECTION 2026 • PREMIUM APPAREL', 400, 165);
-
-    // Divider
-    ctx.strokeStyle = '#E6D8C1';
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.moveTo(80, 200);
-    ctx.lineTo(720, 200);
-    ctx.stroke();
-
-    // Size Box
-    ctx.fillStyle = '#86611F';
-    ctx.fillRect(320, 230, 160, 70);
-    ctx.fillStyle = '#FFFFFF';
-    ctx.font = 'bold 36px Inter, sans-serif';
-    ctx.fillText('SIZE L', 400, 278);
-
-    // Material composition
-    ctx.textAlign = 'left';
-    ctx.fillStyle = '#2A1D14';
-    ctx.font = 'bold 26px Inter, sans-serif';
-    ctx.fillText('COMPOSITION / COMPOSIÇÃO:', 90, 360);
-
-    ctx.font = '22px Inter, sans-serif';
-    ctx.fillStyle = '#4D3B2C';
-    ctx.fillText('• 100% ORGANIC COTTON / ALGODÃO', 90, 405);
-    ctx.fillText('• RN 93243 / CA 25594', 90, 445);
-    ctx.fillText('• MADE IN PORTUGAL / FABRIQUÉ EN PORTUGAL', 90, 485);
-
-    // Care instructions
-    ctx.font = 'bold 24px Inter, sans-serif';
-    ctx.fillStyle = '#2A1D14';
-    ctx.fillText('CARE INSTRUCTIONS / CONSEILS D’ENTRETIEN:', 90, 550);
-
-    ctx.font = '20px Inter, sans-serif';
-    ctx.fillStyle = '#6B5442';
-    ctx.fillText('30° MACHINE WASH DELICATE CYCLE', 90, 590);
-    ctx.fillText('DO NOT BLEACH • TUMBLE DRY LOW', 90, 625);
-    ctx.fillText('WARM IRON MAX 150°C', 90, 660);
-
-    // Barcode representation
-    ctx.fillStyle = '#2A1D14';
-    const startX = 140;
-    const barY = 740;
-    const barHeight = 90;
-    const randomBarcode = '73500' + Math.floor(1000000 + Math.random() * 9000000);
-    
-    // Draw synthetic bars
-    for (let x = 0; x < 520; x += 10) {
-      const w = (x % 30 === 0 || x % 20 === 0) ? 6 : 3;
-      ctx.fillRect(startX + x, barY, w, barHeight);
-    }
-    
-    ctx.textAlign = 'center';
-    ctx.font = 'bold 22px monospace';
-    ctx.fillText(randomBarcode, 400, 870);
-
-    const dataUrl = canvas.toDataURL('image/jpeg', 0.95);
-    onPhotoCaptured(dataUrl);
-    if (onBarcodeDetected) {
-      onBarcodeDetected(randomBarcode);
-    }
-  };
-
   return (
     <div className="relative w-full aspect-[4/3] max-h-[360px] bg-[#2A1D14] rounded-2xl overflow-hidden shadow-inner flex items-center justify-center border border-[#E6D8C1]">
       <canvas ref={canvasRef} className="hidden" />
@@ -413,17 +319,6 @@ export const CameraViewfinder: React.FC<CameraViewfinderProps> = ({
 
       {/* Viewfinder Floating Controls */}
       <div className="absolute bottom-3 inset-x-3 flex items-center justify-between z-20 pointer-events-auto">
-        {/* Sample Tag Button */}
-        <button
-          type="button"
-          onClick={generateSampleLabel}
-          title="Generate Realistic Care Tag Sample"
-          className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-[#2A1D14]/85 text-[#E6D8C1] border border-[#E6D8C1]/30 hover:bg-[#2A1D14] text-xs font-medium backdrop-blur-md transition-all shadow-md active:scale-95 cursor-pointer"
-        >
-          <Sparkles className="w-3.5 h-3.5 text-[#BF9445]" />
-          <span>Sample Tag</span>
-        </button>
-
         {/* Shutter Button */}
         <button
           type="button"

@@ -1,211 +1,164 @@
-import React, { useState, useEffect } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
-import {
-  ShieldCheck,
-  Camera,
-  Layers,
-  Settings as SettingsIcon,
-  Wifi,
-  WifiOff,
-  User,
-  Sparkles
-} from 'lucide-react';
+import { Camera, Layers, Settings as SettingsIcon, ShieldCheck, User, Wifi, WifiOff } from 'lucide-react';
 import { CaptureScreen } from './screens/CaptureScreen';
 import { ReviewScreen } from './screens/ReviewScreen';
 import { DailyLedgerScreen } from './screens/DailyLedgerScreen';
 import { SettingsScreen } from './screens/SettingsScreen';
 import { ToastContainer, type ToastMessage } from './components/Toast';
 import { syncEngine } from './services/syncEngine';
-import { ScanDao, LedgerDao } from './data/db';
-import { loadSettings } from './data/settingsStorage';
+import { LedgerDao, ScanDao } from './data/db';
+import { hasCredentials, loadSettings } from './data/settingsStorage';
+import { vocabulary } from './data/vocabulary';
 
-export type ScreenType = 'review' | 'capture' | 'ledger' | 'settings';
+export type ScreenType = 'capture' | 'review' | 'ledger' | 'settings';
+
+export type ShowToast = (
+  type: 'success' | 'warning' | 'error' | 'info',
+  message: string,
+  title?: string
+) => void;
+
+/** Left to right: Intake, Review, Ledger, Settings (client decision 15). */
+const TABS: Array<{ id: ScreenType; label: string; Icon: typeof Camera }> = [
+  { id: 'capture', label: 'Intake', Icon: Camera },
+  { id: 'review', label: 'Review', Icon: ShieldCheck },
+  { id: 'ledger', label: 'Ledger', Icon: Layers },
+  { id: 'settings', label: 'Settings', Icon: SettingsIcon }
+];
 
 export const App: React.FC = () => {
-  const settings = loadSettings();
-  const [currentScreen, setCurrentScreen] = useState<ScreenType>(settings.defaultStartDestination || 'review');
+  const [settings, setSettings] = useState(loadSettings);
+  const isConfigured = hasCredentials(settings);
+
+  // An unconfigured device opens on Settings and stays there. No warning dialog to
+  // dismiss and no anonymous path (client decisions 9 and 10) - the operator simply
+  // lands where the missing values are entered.
+  const [currentScreen, setCurrentScreen] = useState<ScreenType>(() =>
+    hasCredentials(settings) ? settings.defaultStartDestination : 'settings'
+  );
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
   const [isServerOnline, setIsServerOnline] = useState(true);
 
-  // Live badge counts
-  const readyReviewCount = useLiveQuery(() => ScanDao.getUnverifiedScans(), [])?.length || 0;
-  const activeLedgerCount = useLiveQuery(() => LedgerDao.getActiveLedger(), [])?.length || 0;
+  const readyReviewCount = useLiveQuery(() => ScanDao.getUnverifiedScans(), [])?.length ?? 0;
+  const activeLedgerCount = useLiveQuery(() => LedgerDao.getActiveLedger(), [])?.length ?? 0;
 
-  // Initialize Sync Engine
   useEffect(() => {
+    void vocabulary.hydrateFromCache();
+  }, []);
+
+  useEffect(() => {
+    if (!isConfigured) return;
     syncEngine.start();
-    const unsubscribe = syncEngine.subscribe(() => {
-      setIsServerOnline(syncEngine.isServerReachable);
-    });
+    const unsubscribe = syncEngine.subscribe(() => setIsServerOnline(syncEngine.isServerReachable));
+    // A 304 is the usual answer, so this is cheap enough to run at every start.
+    void syncEngine.refreshVocabulary();
     return () => {
       unsubscribe();
       syncEngine.stop();
     };
+  }, [isConfigured]);
+
+  const showToast: ShowToast = useCallback((type, message, title) => {
+    const toast: ToastMessage = { id: `${Date.now()}_${Math.random()}`, type, message, title };
+    setToasts((prev) => [...prev, toast]);
+    setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== toast.id)), 4500);
   }, []);
 
-  const showToast = (
-    type: 'success' | 'warning' | 'error' | 'info',
-    message: string,
-    title?: string
-  ) => {
-    const newToast: ToastMessage = {
-      id: `${Date.now()}_${Math.random()}`,
-      type,
-      message,
-      title
-    };
-    setToasts((prev) => [...prev, newToast]);
+  const handleSettingsChanged = useCallback(() => setSettings(loadSettings()), []);
 
-    setTimeout(() => {
-      setToasts((prev) => prev.filter((t) => t.id !== newToast.id));
-    }, 4500);
+  const handleNavigate = (screen: ScreenType) => {
+    if (!isConfigured && screen !== 'settings') {
+      showToast('info', 'Enter a server, username and password to start scanning.', 'Setup Required');
+      return;
+    }
+    setCurrentScreen(screen);
   };
 
-  const handleDismissToast = (id: string) => {
-    setToasts((prev) => prev.filter((t) => t.id !== id));
-  };
+  const badgeFor = (id: ScreenType) =>
+    id === 'review' ? readyReviewCount : id === 'ledger' ? activeLedgerCount : 0;
 
   return (
-    <div className="flex flex-col min-h-screen bg-[#FBF6EC] text-[#2A1D14] antialiased">
-      {/* Global Floating Toast Notifications */}
-      <ToastContainer toasts={toasts} onDismiss={handleDismissToast} />
+    <div className="flex flex-col min-h-screen bg-cream-100 text-navy-800 antialiased">
+      <ToastContainer toasts={toasts} onDismiss={(id) => setToasts((p) => p.filter((t) => t.id !== id))} />
 
-      {/* Top Application Bar */}
-      <header className="sticky top-0 z-40 bg-[#FFFDF9]/95 backdrop-blur-md border-b border-[#E6D8C1] px-4 py-3 sm:px-6 flex items-center justify-between shadow-xs">
-        <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-2xl bg-[#86611F] text-white flex items-center justify-center font-black text-base shadow-sm">
-            <Sparkles className="w-5 h-5" />
+      {/* Brand bar. Pads itself out of the notch rather than relying on body padding,
+          which fixed and sticky chrome does not inherit. */}
+      <header className="sticky top-0 z-40 safe-top safe-x bg-navy-900 border-b border-navy-700">
+        <div className="px-4 py-2.5 sm:px-6 flex items-center justify-between min-h-[56px]">
+          <div className="flex items-baseline gap-2">
+            <span className="text-cream-50 font-semibold tracking-tight">OutFit</span>
+            <span className="text-[0.82rem] text-[color:var(--color-gold-wordmark)]">Label Reader</span>
           </div>
-          <div>
-            <div className="text-[10px] font-extrabold uppercase tracking-widest text-[#86611F]">
-              ENTERPRISE PWA • v1.2
+
+          <div className="flex items-center gap-2">
+            <div
+              className={`flex items-center gap-1 px-2 py-1 rounded-[var(--radius-control)] text-[0.75rem] ${
+                isServerOnline ? 'text-cream-300' : 'text-[color:var(--color-gold-wordmark)]'
+              }`}
+            >
+              {isServerOnline ? <Wifi className="w-3.5 h-3.5" /> : <WifiOff className="w-3.5 h-3.5" />}
+              <span className="hidden sm:inline">{isServerOnline ? 'online' : `offline · queue ${readyReviewCount + activeLedgerCount}`}</span>
             </div>
-            <div className="text-base font-black text-[#2A1D14] leading-tight">
-              Label Reader
-            </div>
-          </div>
-        </div>
 
-        {/* Status Indicators */}
-        <div className="flex items-center gap-2">
-          {/* Server Connection Status */}
-          <div
-            className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold border transition-colors ${
-              isServerOnline
-                ? 'bg-[#DCFCE7] text-[#166534] border-green-300'
-                : 'bg-[#FCEFE6] text-[#B4531B] border-[#F0CBAF]'
-            }`}
-          >
-            {isServerOnline ? <Wifi className="w-3.5 h-3.5" /> : <WifiOff className="w-3.5 h-3.5" />}
-            <span className="hidden sm:inline">{isServerOnline ? 'Server Connected' : 'Offline / Retrying'}</span>
-          </div>
-
-          {/* User Badge */}
-          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[#F4EADA] border border-[#E6D8C1] text-[11px] font-bold text-[#6B5442]">
-            <User className="w-3 h-3 text-[#86611F]" />
-            <span className="truncate max-w-[80px] sm:max-w-[120px]">{settings.userId}</span>
+            {settings.userId && (
+              <div className="flex items-center gap-1.5 px-2 py-1 rounded-[var(--radius-control)] bg-navy-800 text-[0.75rem] text-cream-300">
+                <User className="w-3 h-3" />
+                <span className="truncate max-w-[90px]">{settings.userId}</span>
+              </div>
+            )}
           </div>
         </div>
       </header>
 
-      {/* Main Screen Container */}
-      <main className="flex-1 w-full max-w-3xl mx-auto px-4 py-5 sm:px-6">
+      <main className="flex-1 w-full max-w-3xl mx-auto px-3.5 py-4 sm:px-6 safe-x pb-safe-nav">
         {currentScreen === 'capture' && (
-          <CaptureScreen
-            onScanSaved={() => setCurrentScreen('review')}
-            showToast={showToast}
-          />
+          <CaptureScreen onScanSaved={() => setCurrentScreen('review')} showToast={showToast} />
         )}
         {currentScreen === 'review' && (
-          <ReviewScreen
-            onNavigateToCapture={() => setCurrentScreen('capture')}
-            showToast={showToast}
-          />
+          <ReviewScreen onNavigateToCapture={() => setCurrentScreen('capture')} showToast={showToast} />
         )}
         {currentScreen === 'ledger' && (
-          <DailyLedgerScreen
-            onNavigateToCapture={() => setCurrentScreen('capture')}
-            showToast={showToast}
-          />
+          <DailyLedgerScreen onNavigateToCapture={() => setCurrentScreen('capture')} showToast={showToast} />
         )}
         {currentScreen === 'settings' && (
-          <SettingsScreen showToast={showToast} />
+          <SettingsScreen showToast={showToast} onSettingsChanged={handleSettingsChanged} />
         )}
       </main>
 
-      {/* Bottom Navigation Bar */}
-      <nav className="fixed bottom-0 inset-x-0 z-40 bg-[#FFFDF9]/95 backdrop-blur-lg border-t border-[#E6D8C1] py-2 px-4 flex items-center justify-around shadow-lg">
-        {/* 1. Review Workspace */}
-        <button
-          type="button"
-          onClick={() => setCurrentScreen('review')}
-          className={`flex flex-col items-center gap-1 py-1 px-3 rounded-2xl transition-all cursor-pointer relative ${
-            currentScreen === 'review'
-              ? 'text-[#86611F] font-bold'
-              : 'text-[#7D6650] hover:text-[#2A1D14]'
-          }`}
-        >
-          <div className="relative">
-            <ShieldCheck className={`w-5 h-5 ${currentScreen === 'review' ? 'stroke-[2.5]' : ''}`} />
-            {readyReviewCount > 0 && (
-              <span className="absolute -top-1.5 -right-2.5 bg-[#B4531B] text-white text-[10px] font-extrabold px-1.5 py-0.2 rounded-full shadow-sm">
-                {readyReviewCount}
-              </span>
-            )}
-          </div>
-          <span className="text-[10px] tracking-tight">Review</span>
-        </button>
+      {/* Tab bar: 56px, sits at the foot of the layout and pads itself clear of the
+          home indicator so a scrolled screen never collides with it. */}
+      <nav className="fixed bottom-0 inset-x-0 z-40 safe-bottom safe-x bg-cream-50 border-t border-cocoa-200">
+        <div className="flex items-stretch justify-around h-[56px]">
+          {TABS.map(({ id, label, Icon }) => {
+            const isActive = currentScreen === id;
+            const isLocked = !isConfigured && id !== 'settings';
+            const badge = badgeFor(id);
 
-        {/* 2. Intake Camera (Prominent Center) */}
-        <button
-          type="button"
-          onClick={() => setCurrentScreen('capture')}
-          className={`flex flex-col items-center gap-1 py-1 px-3 rounded-2xl transition-all cursor-pointer ${
-            currentScreen === 'capture'
-              ? 'text-[#86611F] font-bold'
-              : 'text-[#7D6650] hover:text-[#2A1D14]'
-          }`}
-        >
-          <div className={`p-2 rounded-2xl ${currentScreen === 'capture' ? 'bg-[#86611F] text-white shadow-md' : 'bg-[#F4EADA] text-[#86611F]'}`}>
-            <Camera className="w-5 h-5" />
-          </div>
-          <span className="text-[10px] tracking-tight">Intake</span>
-        </button>
-
-        {/* 3. Daily Ledger */}
-        <button
-          type="button"
-          onClick={() => setCurrentScreen('ledger')}
-          className={`flex flex-col items-center gap-1 py-1 px-3 rounded-2xl transition-all cursor-pointer relative ${
-            currentScreen === 'ledger'
-              ? 'text-[#86611F] font-bold'
-              : 'text-[#7D6650] hover:text-[#2A1D14]'
-          }`}
-        >
-          <div className="relative">
-            <Layers className={`w-5 h-5 ${currentScreen === 'ledger' ? 'stroke-[2.5]' : ''}`} />
-            {activeLedgerCount > 0 && (
-              <span className="absolute -top-1.5 -right-2.5 bg-[#86611F] text-white text-[10px] font-extrabold px-1.5 py-0.2 rounded-full shadow-sm">
-                {activeLedgerCount}
-              </span>
-            )}
-          </div>
-          <span className="text-[10px] tracking-tight">Ledger</span>
-        </button>
-
-        {/* 4. Settings */}
-        <button
-          type="button"
-          onClick={() => setCurrentScreen('settings')}
-          className={`flex flex-col items-center gap-1 py-1 px-3 rounded-2xl transition-all cursor-pointer ${
-            currentScreen === 'settings'
-              ? 'text-[#86611F] font-bold'
-              : 'text-[#7D6650] hover:text-[#2A1D14]'
-          }`}
-        >
-          <SettingsIcon className={`w-5 h-5 ${currentScreen === 'settings' ? 'stroke-[2.5]' : ''}`} />
-          <span className="text-[10px] tracking-tight">Settings</span>
-        </button>
+            return (
+              <button
+                key={id}
+                type="button"
+                onClick={() => handleNavigate(id)}
+                aria-current={isActive ? 'page' : undefined}
+                className={`relative flex-1 min-h-[44px] flex flex-col items-center justify-center gap-0.5 transition-colors duration-[var(--motion-fast)] ${
+                  isActive ? 'bg-gold-100 text-navy-900' : 'text-cocoa-600 active:bg-cream-200'
+                } ${isLocked ? 'opacity-40' : 'cursor-pointer'}`}
+              >
+                {isActive && <span className="absolute top-0 inset-x-0 h-0.5 bg-gold-500" />}
+                <div className="relative">
+                  <Icon className="w-5 h-5" />
+                  {badge > 0 && (
+                    <span className="absolute -top-1.5 -right-2.5 min-w-[16px] px-1 rounded-full bg-navy-800 text-cream-50 text-[10px] font-semibold text-center">
+                      {badge}
+                    </span>
+                  )}
+                </div>
+                <span className="text-[0.75rem]">{label}</span>
+              </button>
+            );
+          })}
+        </div>
       </nav>
     </div>
   );

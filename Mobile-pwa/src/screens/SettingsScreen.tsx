@@ -1,40 +1,91 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
+  AlertTriangle,
+  BookOpen,
+  CheckCircle2,
+  HardDrive,
+  LogOut,
+  RefreshCw,
   Server,
   ShieldAlert,
-  Trash2,
-  CheckCircle2,
-  AlertTriangle,
-  RefreshCw,
-  Sparkles,
-  Zap,
-  Sliders
+  Sliders,
+  Trash2
 } from 'lucide-react';
-import { loadSettings, saveSettings } from '../data/settingsStorage';
+import { hasCredentials, loadSettings, saveSettings, signOut } from '../data/settingsStorage';
 import { VisionApiService } from '../services/visionApiService';
-import { ScanDao, LedgerDao } from '../data/db';
-import type { ConnectionValidationResult } from '../types/models';
+import { vocabulary } from '../data/vocabulary';
+import { LedgerDao, ScanDao, db } from '../data/db';
+import type { AppSettingsData, ConnectionValidationResult } from '../types/models';
+import type { ShowToast } from '../App';
 
 interface SettingsScreenProps {
-  showToast: (type: 'success' | 'warning' | 'error' | 'info', message: string, title?: string) => void;
+  showToast: ShowToast;
+  onSettingsChanged?: () => void;
 }
 
-export const SettingsScreen: React.FC<SettingsScreenProps> = ({ showToast }) => {
-  const [settings, setSettings] = useState(loadSettings());
+/** One framed block. The order of these on screen is client decision 17-B. */
+const Section: React.FC<{
+  icon: React.ReactNode;
+  title: string;
+  children: React.ReactNode;
+  tone?: 'default' | 'danger';
+}> = ({ icon, title, children, tone = 'default' }) => (
+  <section
+    className={`p-4 rounded-[var(--radius-container)] border shadow-[var(--shadow-card)] flex flex-col gap-3.5 ${
+      tone === 'danger' ? 'bg-cream-50 border-[color:var(--color-critical)]/40' : 'bg-cream-50 border-cocoa-200'
+    }`}
+  >
+    <div className="flex items-center gap-2.5">
+      <div
+        className={`w-8 h-8 rounded-[var(--radius-control)] flex items-center justify-center ${
+          tone === 'danger' ? 'text-[color:var(--color-critical)] bg-cream-200' : 'text-navy-800 bg-cream-200'
+        }`}
+      >
+        {icon}
+      </div>
+      <h2 className={`text-[0.88rem] font-semibold ${tone === 'danger' ? 'text-[color:var(--color-critical)]' : 'text-navy-900'}`}>
+        {title}
+      </h2>
+    </div>
+    {children}
+  </section>
+);
+
+const fieldClass =
+  'w-full px-3 py-2.5 min-h-[44px] rounded-[var(--radius-control)] text-[0.88rem] bg-white border border-cocoa-200 text-navy-800 placeholder:text-cocoa-400 outline-none focus:border-gold-600';
+
+const labelClass = 'text-[0.75rem] font-semibold uppercase tracking-wider text-cocoa-600';
+
+export const SettingsScreen: React.FC<SettingsScreenProps> = ({ showToast, onSettingsChanged }) => {
+  const [settings, setSettings] = useState(loadSettings);
   const [isValidating, setIsValidating] = useState(false);
   const [validationResult, setValidationResult] = useState<ConnectionValidationResult | null>(null);
-
-  // Danger zone modal state
+  const [isSyncingVocab, setIsSyncingVocab] = useState(false);
+  const [vocabState, setVocabState] = useState(vocabulary.current);
+  const [storage, setStorage] = useState<{ scans: number; ledger: number; photos: number } | null>(null);
   const [showDangerModal, setShowDangerModal] = useState(false);
   const [dangerConfirmChecked, setDangerConfirmChecked] = useState(false);
 
+  const isConfigured = hasCredentials(settings);
+
+  useEffect(() => vocabulary.subscribe(setVocabState), []);
+
+  const refreshStorage = async () => {
+    const [scans, ledger] = await Promise.all([ScanDao.getAllScans(), LedgerDao.getAllLedgerHistory()]);
+    const photos = scans.reduce((n, s) => n + s.photos.length, 0) + ledger.reduce((n, l) => n + l.photos.length, 0);
+    setStorage({ scans: scans.length, ledger: ledger.length, photos });
+  };
+
   useEffect(() => {
-    setSettings(loadSettings());
+    void refreshStorage();
   }, []);
 
-  const handleChange = (key: keyof typeof settings, value: unknown) => {
-    const updated = saveSettings({ [key]: value });
+  const change = <K extends keyof AppSettingsData>(key: K, value: AppSettingsData[K]) => {
+    // Changing a credential invalidates the token minted from the old one.
+    const invalidates = key === 'userId' || key === 'devicePassword' || key === 'serverUrl';
+    const updated = saveSettings(invalidates ? { [key]: value, sessionToken: undefined } : { [key]: value });
     setSettings(updated);
+    onSettingsChanged?.();
   };
 
   const handleTestConnection = async () => {
@@ -44,9 +95,11 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ showToast }) => 
       const result = await VisionApiService.testConnectionAndAuth();
       setValidationResult(result);
       if (result.isSuccessful) {
-        showToast('success', 'Server reachable and authenticated successfully!', 'Connection Validated');
+        showToast('success', 'Server reachable and credentials accepted.', 'Connection Verified');
+        onSettingsChanged?.();
+        void vocabulary.refreshFromServer();
       } else {
-        showToast('warning', result.errorMessage || 'Connection test failed', 'Validation Notice');
+        showToast('warning', result.errorMessage || 'Connection test failed.', 'Validation Notice');
       }
     } catch (err) {
       showToast('error', (err as Error).message || 'Test failed', 'Error');
@@ -55,8 +108,50 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ showToast }) => 
     }
   };
 
-  const handleClearCache = async () => {
-    showToast('info', 'Photo cache optimized.', 'Cache Cleared');
+  const handleSignOut = () => {
+    const updated = signOut();
+    setSettings(updated);
+    setValidationResult(null);
+    onSettingsChanged?.();
+    showToast('info', 'Signed out. Local scans and the ledger are untouched.', 'Signed Out');
+  };
+
+  const handleVocabSync = async () => {
+    setIsSyncingVocab(true);
+    try {
+      const result = await vocabulary.refreshFromServer();
+      if (result.status === 'updated') {
+        showToast('success', `Vocabulary updated to version ${result.version}.`, 'Reference Tables');
+      } else if (result.status === 'unchanged') {
+        showToast('info', 'Vocabulary is already current.', 'Reference Tables');
+      } else {
+        // Not an error the operator must act on: a stale vocabulary is explicitly
+        // acceptable, and the bundled tables are complete.
+        showToast('warning', `${result.message} Using the tables bundled with the app.`, 'Reference Tables');
+      }
+    } finally {
+      setIsSyncingVocab(false);
+    }
+  };
+
+  /**
+   * Photos held by scans that were confirmed into the ledger. The ledger keeps its own
+   * copy, and the server keeps its own regardless (contract section 7), so these are
+   * duplicates the device does not need.
+   */
+  const handlePurgeUnusedPhotos = async () => {
+    const scans = await ScanDao.getAllScans();
+    const spent = scans.filter((s) => s.status === 2 && s.photos.length > 0);
+    if (spent.length === 0) {
+      showToast('info', 'No unused photos to purge.', 'Storage');
+      return;
+    }
+    const freed = spent.reduce((n, s) => n + s.photos.length, 0);
+    await db.transaction('rw', db.scans, async () => {
+      for (const scan of spent) await db.scans.update(scan.apparelId, { photos: [] });
+    });
+    await refreshStorage();
+    showToast('success', `Released ${freed} photo(s) from ${spent.length} confirmed scan(s).`, 'Storage Reclaimed');
   };
 
   const handlePurgeAllData = async () => {
@@ -64,159 +159,108 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ showToast }) => 
     try {
       await ScanDao.clearAllScans();
       await LedgerDao.clearAllLedger();
+      await vocabulary.resetToBundle();
       setShowDangerModal(false);
       setDangerConfirmChecked(false);
-      showToast('success', 'All database scans, photos, and ledger records have been purged.', 'Storage Reset');
+      await refreshStorage();
+      showToast('success', 'All local scans, photos and ledger records purged.', 'Storage Reset');
     } catch (err) {
       showToast('error', (err as Error).message || 'Purge failed', 'Error');
     }
   };
 
   return (
-    <div className="flex flex-col gap-6 pb-20">
-      {/* Title */}
+    <div className="flex flex-col gap-4">
       <div>
-        <div className="text-[11px] font-extrabold uppercase tracking-widest text-[#86611F]">
-          PREFERENCES & STORAGE
+        <div className="text-[0.75rem] font-semibold uppercase tracking-wider text-cocoa-600">
+          Preferences &amp; storage
         </div>
-        <h1 className="text-xl sm:text-2xl font-black text-[#2A1D14] tracking-tight">
-          Enterprise Device Settings
-        </h1>
+        <h1 className="text-[1.1rem] font-semibold text-navy-900">Device Settings</h1>
       </div>
 
-      {/* 1. App Launch & Workflow Navigation */}
-      <div className="bg-[#FFFDF9] p-5 rounded-3xl border border-[#E6D8C1] shadow-sm flex flex-col gap-4">
-        <div className="flex items-center gap-2.5">
-          <div className="w-8 h-8 rounded-xl bg-[#F4EADA] text-[#86611F] flex items-center justify-center font-bold">
-            <Sliders className="w-4 h-4" />
-          </div>
-          <h2 className="text-sm font-bold text-[#2A1D14]">Workflow & Launch Settings</h2>
+      {!isConfigured && (
+        <div className="p-3.5 rounded-[var(--radius-container)] bg-gold-100 border border-gold-500 text-[0.82rem] text-navy-800 flex items-start gap-2">
+          <AlertTriangle className="w-4 h-4 mt-0.5 text-[color:var(--color-warning)] flex-shrink-0" />
+          <span>
+            Enter the operator username, password and server address below, then test the connection. Scanning
+            unlocks once the device is signed in.
+          </span>
         </div>
+      )}
 
+      {/* 1. User name · 2. Password · 3. Server URL · 4. Test connection · 5. Sign out */}
+      <Section icon={<Server className="w-4 h-4" />} title="Middleware &amp; Authentication">
         <div className="flex flex-col gap-1.5">
-          <label className="text-xs font-semibold uppercase tracking-wider text-[#6B5442]">
-            Default Launch Screen
-          </label>
-          <select
-            value={settings.defaultStartDestination}
-            onChange={(e) => handleChange('defaultStartDestination', e.target.value)}
-            className="w-full px-3.5 py-2.5 rounded-xl text-sm font-medium bg-[#FBF6EC] border border-[#E6D8C1] text-[#2A1D14] outline-none focus:border-[#86611F]"
-          >
-            <option value="review">Verification Workspace (Review Extractions)</option>
-            <option value="capture">Garment Intake (Camera & Barcode)</option>
-            <option value="ledger">Production Audit (Daily Ledger)</option>
-          </select>
-        </div>
-
-        <div className="flex items-center justify-between pt-2 border-t border-[#E6D8C1]">
-          <div className="flex flex-col">
-            <span className="text-xs font-bold text-[#2A1D14]">Auto-Sync Vision AI</span>
-            <span className="text-[11px] text-[#7D6650]">
-              Automatically submit captured scans to middleware in background
-            </span>
-          </div>
-          <input
-            type="checkbox"
-            checked={settings.autoSyncAiVision}
-            onChange={(e) => handleChange('autoSyncAiVision', e.target.checked)}
-            className="w-5 h-5 accent-[#86611F] rounded cursor-pointer"
-          />
-        </div>
-
-        <div className="flex items-center justify-between pt-2 border-t border-[#E6D8C1]">
-          <div className="flex flex-col">
-            <span className="text-xs font-bold text-[#2A1D14] flex items-center gap-1.5">
-              <Sparkles className="w-3.5 h-3.5 text-[#BF9445]" />
-              Demo Simulation Mode
-            </span>
-            <span className="text-[11px] text-[#7D6650]">
-              Run local synthetic Gemini inferences for testing without live server
-            </span>
-          </div>
-          <input
-            type="checkbox"
-            checked={settings.demoModeEnabled}
-            onChange={(e) => handleChange('demoModeEnabled', e.target.checked)}
-            className="w-5 h-5 accent-[#86611F] rounded cursor-pointer"
-          />
-        </div>
-      </div>
-
-      {/* 2. Middleware API Connection */}
-      <div className="bg-[#FFFDF9] p-5 rounded-3xl border border-[#E6D8C1] shadow-sm flex flex-col gap-4">
-        <div className="flex items-center gap-2.5">
-          <div className="w-8 h-8 rounded-xl bg-[#F4EADA] text-[#86611F] flex items-center justify-center font-bold">
-            <Server className="w-4 h-4" />
-          </div>
-          <h2 className="text-sm font-bold text-[#2A1D14]">Middleware API & Authentication</h2>
-        </div>
-
-        <div className="flex flex-col gap-1.5">
-          <label className="text-xs font-semibold uppercase tracking-wider text-[#6B5442]">
-            Server Base URL
+          <label className={labelClass} htmlFor="settings-username">
+            User Name
           </label>
           <input
+            id="settings-username"
             type="text"
-            value={settings.serverUrl}
-            onChange={(e) => handleChange('serverUrl', e.target.value)}
-            placeholder="https://dev.outfit.am"
-            className="w-full px-3.5 py-2.5 rounded-xl text-sm font-mono font-medium bg-[#FBF6EC] border border-[#E6D8C1] text-[#2A1D14] outline-none focus:border-[#86611F]"
+            autoComplete="username"
+            value={settings.userId}
+            onChange={(e) => change('userId', e.target.value)}
+            placeholder="operator id, e.g. emp_402"
+            className={fieldClass}
           />
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-semibold uppercase tracking-wider text-[#6B5442]">
-              Operator Username
-            </label>
-            <input
-              type="text"
-              value={settings.userId}
-              onChange={(e) => handleChange('userId', e.target.value)}
-              className="w-full px-3.5 py-2.5 rounded-xl text-sm font-medium bg-[#FBF6EC] border border-[#E6D8C1] text-[#2A1D14] outline-none focus:border-[#86611F]"
-            />
-          </div>
-
-          <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-semibold uppercase tracking-wider text-[#6B5442]">
-              Device Master Password
-            </label>
-            <input
-              type="password"
-              value={settings.devicePassword}
-              onChange={(e) => handleChange('devicePassword', e.target.value)}
-              className="w-full px-3.5 py-2.5 rounded-xl text-sm font-medium bg-[#FBF6EC] border border-[#E6D8C1] text-[#2A1D14] outline-none focus:border-[#86611F]"
-            />
-          </div>
+        <div className="flex flex-col gap-1.5">
+          <label className={labelClass} htmlFor="settings-password">
+            Password
+          </label>
+          <input
+            id="settings-password"
+            type="password"
+            autoComplete="current-password"
+            value={settings.devicePassword}
+            onChange={(e) => change('devicePassword', e.target.value)}
+            className={fieldClass}
+          />
         </div>
 
-        {/* Validation Result Box */}
+        <div className="flex flex-col gap-1.5">
+          <label className={labelClass} htmlFor="settings-server">
+            Server URL
+          </label>
+          <input
+            id="settings-server"
+            type="url"
+            inputMode="url"
+            value={settings.serverUrl}
+            onChange={(e) => change('serverUrl', e.target.value)}
+            placeholder="https://dev.outfit.am"
+            className={`${fieldClass} font-mono`}
+          />
+        </div>
+
         {validationResult && (
           <div
-            className={`p-3.5 rounded-2xl border flex flex-col gap-1 text-xs ${
+            className={`p-3 rounded-[var(--radius-control)] border flex flex-col gap-1 text-[0.75rem] ${
               validationResult.isSuccessful
-                ? 'bg-[#DCFCE7] border-green-300 text-[#166534]'
-                : 'bg-[#FCEFE6] border-[#F0CBAF] text-[#B4531B]'
+                ? 'bg-cream-50 border-[color:var(--color-good)] text-[color:var(--color-good)]'
+                : 'bg-cream-50 border-[color:var(--color-critical)] text-[color:var(--color-critical)]'
             }`}
           >
-            <div className="flex items-center gap-1.5 font-bold">
+            <div className="flex items-center gap-1.5 font-semibold">
               {validationResult.isSuccessful ? (
                 <CheckCircle2 className="w-4 h-4" />
               ) : (
                 <AlertTriangle className="w-4 h-4" />
               )}
-              <span>{validationResult.isSuccessful ? 'Connection Verified' : 'Validation Notice'}</span>
+              <span>{validationResult.isSuccessful ? 'Connection verified' : 'Validation notice'}</span>
             </div>
             {validationResult.errorMessage && <div>{validationResult.errorMessage}</div>}
-            {validationResult.tokenPreview && (
-              <div className="font-mono text-[11px] opacity-80">
-                JWT Session Token: {validationResult.tokenPreview}
+            {validationResult.isHealthOk && (
+              <div className="text-navy-800">
+                Server {validationResult.serverVersion ?? 'unknown'} · contract{' '}
+                {validationResult.apiContract ?? 'pre-1.3'} · Gemini{' '}
+                {validationResult.geminiReady ? 'ready' : 'unavailable'}
               </div>
             )}
-            <div className="text-[11px] opacity-90">
-              Server Version: {validationResult.serverVersion} • Gemini Ready:{' '}
-              {validationResult.geminiReady ? 'YES' : 'Fallback'}
-            </div>
+            {validationResult.contractWarning && (
+              <div className="text-[color:var(--color-warning)]">{validationResult.contractWarning}</div>
+            )}
           </div>
         )}
 
@@ -224,93 +268,183 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ showToast }) => 
           type="button"
           onClick={handleTestConnection}
           disabled={isValidating}
-          className="flex items-center justify-center gap-2 px-5 py-3 rounded-2xl bg-[#86611F] hover:bg-[#A87C2E] text-white font-bold text-xs shadow-md transition-all active:scale-95 disabled:opacity-50 cursor-pointer"
+          className="flex items-center justify-center gap-2 px-4 min-h-[44px] rounded-[var(--radius-control)] bg-navy-800 text-cream-50 font-semibold text-[0.82rem] transition-colors duration-[var(--motion-fast)] hover:bg-navy-700 active:bg-navy-950 disabled:opacity-50 cursor-pointer"
         >
           <RefreshCw className={`w-4 h-4 ${isValidating ? 'animate-spin' : ''}`} />
-          <span>{isValidating ? 'Testing Handshake...' : 'Test & Validate Connection'}</span>
+          <span>{isValidating ? 'Testing…' : 'Test Connection'}</span>
         </button>
-      </div>
 
-      {/* 3. Storage Optimization */}
-      <div className="bg-[#FFFDF9] p-5 rounded-3xl border border-[#E6D8C1] shadow-sm flex flex-col gap-4">
-        <div className="flex items-center gap-2.5">
-          <div className="w-8 h-8 rounded-xl bg-[#F4EADA] text-[#86611F] flex items-center justify-center font-bold">
-            <Trash2 className="w-4 h-4" />
+        <button
+          type="button"
+          onClick={handleSignOut}
+          disabled={!settings.sessionToken && !settings.devicePassword}
+          className="flex items-center justify-center gap-2 px-4 min-h-[44px] rounded-[var(--radius-control)] bg-cream-50 border border-cocoa-200 text-navy-800 font-semibold text-[0.82rem] transition-colors duration-[var(--motion-fast)] hover:bg-cream-200 disabled:opacity-40 cursor-pointer"
+        >
+          <LogOut className="w-4 h-4" />
+          <span>Sign Out</span>
+        </button>
+      </Section>
+
+      {/* 6. Auto Sync Vision AI · 7. Default start screen */}
+      <Section icon={<Sliders className="w-4 h-4" />} title="Workflow">
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex flex-col">
+            <span className="text-[0.88rem] font-medium text-navy-900">Auto Sync Vision AI</span>
+            <span className="text-[0.75rem] text-cocoa-600">
+              Submit captured scans to the middleware in the background
+            </span>
           </div>
-          <h2 className="text-sm font-bold text-[#2A1D14]">Local Storage Optimization</h2>
+          <input
+            type="checkbox"
+            checked={settings.autoSyncAiVision}
+            onChange={(e) => change('autoSyncAiVision', e.target.checked)}
+            className="w-5 h-5 accent-[color:var(--color-navy-800)] cursor-pointer flex-shrink-0"
+          />
         </div>
 
-        <p className="text-xs text-[#6B5442]">
-          Clean up scratch photo data and optimize IndexedDB local memory cache.
+        <div className="flex items-center justify-between gap-3 pt-3 border-t border-cocoa-100">
+          <div className="flex flex-col">
+            <span className="text-[0.88rem] font-medium text-navy-900">
+              Require all fields complete to Export
+            </span>
+            <span className="text-[0.75rem] text-cocoa-600">
+              On blocks the export while any required column is blank; Off warns and exports anyway
+            </span>
+          </div>
+          <input
+            type="checkbox"
+            checked={settings.requireCompleteForExport}
+            onChange={(e) => change('requireCompleteForExport', e.target.checked)}
+            className="w-5 h-5 accent-[color:var(--color-navy-800)] cursor-pointer flex-shrink-0"
+          />
+        </div>
+
+        <div className="flex flex-col gap-1.5 pt-3 border-t border-cocoa-100">
+          <label className={labelClass} htmlFor="settings-start">
+            Default Start Screen
+          </label>
+          <select
+            id="settings-start"
+            value={settings.defaultStartDestination}
+            onChange={(e) => change('defaultStartDestination', e.target.value as AppSettingsData['defaultStartDestination'])}
+            className={fieldClass}
+          >
+            <option value="capture">Intake — barcode &amp; camera</option>
+            <option value="review">Review — verify extractions</option>
+            <option value="ledger">Ledger — daily audit</option>
+            <option value="settings">Settings</option>
+          </select>
+        </div>
+      </Section>
+
+      {/* 8. Reference Vocabulary sync */}
+      <Section icon={<BookOpen className="w-4 h-4" />} title="Reference Vocabulary">
+        <p className="text-[0.82rem] text-cocoa-600">
+          Brand, SubCategory, Country, Material, Colour, Gender and Season come from the server and grow as a
+          supervisor adds rows. The app ships with a complete copy so it works before it has ever reached the
+          server.
+        </p>
+
+        <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-[0.75rem] p-3 rounded-[var(--radius-control)] bg-cream-200">
+          <span className="text-cocoa-600">Source</span>
+          <span className="text-right text-navy-800 font-medium">
+            {vocabState.origin === 'server' ? 'Server' : 'Bundled with app'}
+          </span>
+          <span className="text-cocoa-600">Version</span>
+          <span className="text-right font-mono text-navy-800">{vocabState.version}</span>
+          <span className="text-cocoa-600">Entries</span>
+          <span className="text-right text-navy-800">
+            {Object.values(vocabState.tables).reduce((n, t) => n + t.entries.length, 0)}
+          </span>
+        </div>
+
+        <button
+          type="button"
+          onClick={handleVocabSync}
+          disabled={isSyncingVocab || !isConfigured}
+          className="flex items-center justify-center gap-2 px-4 min-h-[44px] rounded-[var(--radius-control)] bg-cream-50 border border-cocoa-200 text-navy-800 font-semibold text-[0.82rem] transition-colors duration-[var(--motion-fast)] hover:bg-cream-200 disabled:opacity-40 cursor-pointer"
+        >
+          <RefreshCw className={`w-4 h-4 ${isSyncingVocab ? 'animate-spin' : ''}`} />
+          <span>{isSyncingVocab ? 'Syncing…' : 'Sync Reference Vocabulary'}</span>
+        </button>
+      </Section>
+
+      {/* 9. Storage & unused photo purge */}
+      <Section icon={<HardDrive className="w-4 h-4" />} title="Storage">
+        <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-[0.75rem] p-3 rounded-[var(--radius-control)] bg-cream-200">
+          <span className="text-cocoa-600">Scans held</span>
+          <span className="text-right text-navy-800">{storage?.scans ?? '—'}</span>
+          <span className="text-cocoa-600">Ledger records</span>
+          <span className="text-right text-navy-800">{storage?.ledger ?? '—'}</span>
+          <span className="text-cocoa-600">Photos on device</span>
+          <span className="text-right text-navy-800">{storage?.photos ?? '—'}</span>
+        </div>
+
+        <p className="text-[0.82rem] text-cocoa-600">
+          Photos belonging to scans already confirmed into the ledger are duplicates — the ledger holds its own
+          copy and the server keeps one regardless.
         </p>
 
         <button
           type="button"
-          onClick={handleClearCache}
-          className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl border border-[#E6D8C1] text-[#6B5442] hover:bg-[#F4EADA] font-semibold text-xs transition-colors cursor-pointer"
+          onClick={handlePurgeUnusedPhotos}
+          className="flex items-center justify-center gap-2 px-4 min-h-[44px] rounded-[var(--radius-control)] bg-cream-50 border border-cocoa-200 text-navy-800 font-semibold text-[0.82rem] transition-colors duration-[var(--motion-fast)] hover:bg-cream-200 cursor-pointer"
         >
-          <Zap className="w-4 h-4 text-[#86611F]" />
-          <span>Optimize Storage Cache</span>
+          <Trash2 className="w-4 h-4" />
+          <span>Purge Unused Photos</span>
         </button>
-      </div>
+      </Section>
 
-      {/* 4. Danger Zone */}
-      <div className="bg-[#FCEFE6] p-5 rounded-3xl border border-[#F0CBAF] shadow-sm flex flex-col gap-4">
-        <div className="flex items-center gap-2.5">
-          <div className="w-8 h-8 rounded-xl bg-red-100 text-red-700 flex items-center justify-center font-bold">
-            <ShieldAlert className="w-4 h-4" />
-          </div>
-          <h2 className="text-sm font-extrabold text-[#B4531B]">Danger Zone</h2>
-        </div>
-
-        <p className="text-xs text-[#B4531B]">
-          Warning: Make sure you have exported all necessary CSV batches before resetting. This action will permanently erase all local scans and history records.
+      {/* 10. Danger zone */}
+      <Section icon={<ShieldAlert className="w-4 h-4" />} title="Danger Zone" tone="danger">
+        <p className="text-[0.82rem] text-cocoa-600">
+          Export every outstanding CSV batch before resetting. This permanently erases all local scans, photos
+          and ledger history on this device.
         </p>
-
         <button
           type="button"
           onClick={() => setShowDangerModal(true)}
-          className="flex items-center justify-center gap-2 px-5 py-3 rounded-2xl bg-red-700 hover:bg-red-800 text-white font-bold text-xs shadow-md transition-all active:scale-95 cursor-pointer"
+          className="flex items-center justify-center gap-2 px-4 min-h-[44px] rounded-[var(--radius-control)] bg-cream-50 border border-cocoa-200 text-[color:var(--color-critical)] font-semibold text-[0.82rem] transition-colors duration-[var(--motion-fast)] hover:bg-cream-200 cursor-pointer"
         >
           <Trash2 className="w-4 h-4" />
-          <span>Purge All Database Records & Photos</span>
+          <span>Purge All Records &amp; Photos</span>
         </button>
-      </div>
+      </Section>
 
-      {/* Danger Zone Confirmation Modal */}
       {showDangerModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="bg-[#FFFDF9] border border-red-200 rounded-3xl w-full max-w-md p-6 flex flex-col gap-5 shadow-2xl">
-            <div className="flex items-center gap-3 text-red-700">
-              <ShieldAlert className="w-8 h-8 flex-shrink-0" />
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-navy-950/50">
+          <div className="bg-cream-50 border border-cocoa-200 rounded-[var(--radius-modal)] w-full max-w-md p-5 flex flex-col gap-4 shadow-[var(--shadow-overlay)]">
+            <div className="flex items-center gap-3 text-[color:var(--color-critical)]">
+              <ShieldAlert className="w-7 h-7 flex-shrink-0" />
               <div>
-                <h3 className="text-base font-black">Confirm Permanent Reset</h3>
-                <div className="text-xs font-semibold opacity-90">Irreversible Action</div>
+                <h3 className="text-[1.1rem] font-semibold">Confirm permanent reset</h3>
+                <div className="text-[0.75rem]">This cannot be undone</div>
               </div>
             </div>
 
-            <p className="text-xs text-[#6B5442] leading-relaxed">
-              This will completely wipe all intake photos, pending vision queues, verified scans, and past daily ledger archives from this device.
+            <p className="text-[0.82rem] text-cocoa-600">
+              Every intake photo, pending vision queue entry, verified scan and past ledger archive on this
+              device will be erased.
             </p>
 
-            <label className="flex items-center gap-2.5 p-3 rounded-xl bg-[#FCEFE6] border border-[#F0CBAF] text-xs font-bold text-[#B4531B] cursor-pointer">
+            <label className="flex items-center gap-2.5 p-3 rounded-[var(--radius-control)] bg-cream-200 text-[0.82rem] text-navy-800 cursor-pointer">
               <input
                 type="checkbox"
                 checked={dangerConfirmChecked}
                 onChange={(e) => setDangerConfirmChecked(e.target.checked)}
-                className="w-4 h-4 accent-red-700 rounded cursor-pointer"
+                className="w-4 h-4 accent-[color:var(--color-critical)] cursor-pointer"
               />
-              <span>I understand that all local data will be permanently destroyed.</span>
+              <span>I understand all local data will be permanently destroyed.</span>
             </label>
 
-            <div className="flex items-center justify-end gap-3 pt-2">
+            <div className="flex items-center justify-end gap-3">
               <button
                 type="button"
                 onClick={() => {
                   setShowDangerModal(false);
                   setDangerConfirmChecked(false);
                 }}
-                className="px-4 py-2.5 rounded-xl border border-[#E6D8C1] text-[#6B5442] font-semibold text-xs hover:bg-[#F4EADA] transition-colors cursor-pointer"
+                className="px-4 min-h-[44px] rounded-[var(--radius-control)] border border-cocoa-200 text-navy-800 font-semibold text-[0.82rem] hover:bg-cream-200 cursor-pointer"
               >
                 Cancel
               </button>
@@ -318,9 +452,9 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ showToast }) => 
                 type="button"
                 disabled={!dangerConfirmChecked}
                 onClick={handlePurgeAllData}
-                className="px-5 py-2.5 rounded-xl bg-red-700 hover:bg-red-800 text-white font-bold text-xs shadow-md transition-all active:scale-95 disabled:opacity-40 cursor-pointer"
+                className="px-4 min-h-[44px] rounded-[var(--radius-control)] bg-[color:var(--color-critical)] text-cream-50 font-semibold text-[0.82rem] disabled:opacity-40 cursor-pointer"
               >
-                Permanently Delete All Data
+                Delete Everything
               </button>
             </div>
           </div>
