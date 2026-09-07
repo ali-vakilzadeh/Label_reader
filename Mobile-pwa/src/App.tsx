@@ -10,6 +10,7 @@ import { syncEngine } from './services/syncEngine';
 import { LedgerDao, ScanDao } from './data/db';
 import { hasCredentials, loadSettings } from './data/settingsStorage';
 import { vocabulary } from './data/vocabulary';
+import { useLanguage } from './data/i18n';
 
 export type ScreenType = 'capture' | 'review' | 'ledger' | 'settings';
 
@@ -28,6 +29,7 @@ const TABS: Array<{ id: ScreenType; label: string; Icon: typeof Camera }> = [
 ];
 
 export const App: React.FC = () => {
+  const { t } = useLanguage();
   const [settings, setSettings] = useState(loadSettings);
   const isConfigured = hasCredentials(settings);
 
@@ -154,7 +156,7 @@ export const App: React.FC = () => {
                     </span>
                   )}
                 </div>
-                <span className="text-[0.75rem]">{label}</span>
+                <span className="text-[0.75rem]">{t(label)}</span>
               </button>
             );
           })}

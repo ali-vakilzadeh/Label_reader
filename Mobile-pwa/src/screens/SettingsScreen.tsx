@@ -14,6 +14,7 @@ import {
 import { hasCredentials, loadSettings, saveSettings, signOut } from '../data/settingsStorage';
 import { VisionApiService } from '../services/visionApiService';
 import { vocabulary } from '../data/vocabulary';
+import { setLanguage } from '../data/i18n';
 import { LedgerDao, ScanDao, db } from '../data/db';
 import type { AppSettingsData, ConnectionValidationResult } from '../types/models';
 import type { ShowToast } from '../App';
@@ -317,6 +318,28 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ showToast, onSet
             onChange={(e) => change('requireCompleteForExport', e.target.checked)}
             className="w-5 h-5 accent-[color:var(--color-navy-800)] cursor-pointer flex-shrink-0"
           />
+        </div>
+
+        <div className="flex flex-col gap-1.5 pt-3 border-t border-cocoa-100">
+          <label className={labelClass} htmlFor="settings-language">
+            Language
+          </label>
+          <select
+            id="settings-language"
+            value={settings.language}
+            onChange={(e) => {
+              const language = e.target.value as AppSettingsData['language'];
+              change('language', language);
+              setLanguage(language);
+            }}
+            className={fieldClass}
+          >
+            <option value="en">English</option>
+            <option value="hy">Հայերեն (Armenian)</option>
+          </select>
+          <span className="text-[0.75rem] text-cocoa-400">
+            Changes what the operator reads. Every value stored, exported and sent stays English.
+          </span>
         </div>
 
         <div className="flex flex-col gap-1.5 pt-3 border-t border-cocoa-100">

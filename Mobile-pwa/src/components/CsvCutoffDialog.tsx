@@ -1,5 +1,5 @@
-import React from 'react';
-import { FileSpreadsheet, CheckCircle2, AlertCircle } from 'lucide-react';
+import React, { useState } from 'react';
+import { AlertCircle, CheckCircle2, FileSpreadsheet } from 'lucide-react';
 
 interface CsvCutoffDialogProps {
   batchId: string;
@@ -9,6 +9,13 @@ interface CsvCutoffDialogProps {
   onDismiss: () => void;
 }
 
+/**
+ * The second half of the two-step export.
+ *
+ * The file is already written and its rows are already locked; this only asks whether
+ * the batch was received, which is what ends the session. Dismissing is safe - the
+ * rows stay in the active list, still locked, until someone confirms.
+ */
 export const CsvCutoffDialog: React.FC<CsvCutoffDialogProps> = ({
   batchId,
   count,
@@ -16,7 +23,7 @@ export const CsvCutoffDialog: React.FC<CsvCutoffDialogProps> = ({
   onConfirmCutoff,
   onDismiss
 }) => {
-  const [isProcessing, setIsProcessing] = React.useState(false);
+  const [isProcessing, setIsProcessing] = useState(false);
 
   const handleConfirm = async () => {
     setIsProcessing(true);
@@ -30,61 +37,57 @@ export const CsvCutoffDialog: React.FC<CsvCutoffDialogProps> = ({
     }
   };
 
+  const row = (label: string, value: React.ReactNode) => (
+    <div className="flex justify-between gap-3">
+      <span className="text-cocoa-600">{label}</span>
+      <span className="font-mono text-navy-900 truncate">{value}</span>
+    </div>
+  );
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
-      <div className="bg-[#FFFDF9] border border-[#E6D8C1] rounded-3xl w-full max-w-md p-6 flex flex-col gap-5 shadow-2xl">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-navy-950/50">
+      <div className="bg-cream-50 border border-cocoa-200 rounded-[var(--radius-modal)] w-full max-w-md p-5 flex flex-col gap-4 shadow-[var(--shadow-overlay)]">
         <div className="flex items-center gap-3">
-          <div className="w-12 h-12 rounded-2xl bg-[#DCFCE7] text-[#166534] flex items-center justify-center flex-shrink-0 shadow-sm">
+          <div className="w-11 h-11 rounded-[var(--radius-control)] bg-cream-200 text-[color:var(--color-good)] flex items-center justify-center flex-shrink-0">
             <FileSpreadsheet className="w-6 h-6" />
           </div>
           <div>
-            <div className="text-xs font-bold uppercase tracking-widest text-[#6B5442]">
-              Two-Step Production Cut-Off
-            </div>
-            <h3 className="text-base font-extrabold text-[#2A1D14]">
-              CSV Generated Successfully
-            </h3>
+            <div className="text-[0.75rem] uppercase tracking-wider text-cocoa-600">Production cut-off</div>
+            <h3 className="text-[1.1rem] font-semibold text-navy-900">CSV generated</h3>
           </div>
         </div>
 
-        <div className="bg-[#F4EADA]/60 p-4 rounded-2xl border border-[#E6D8C1] flex flex-col gap-2 text-xs text-[#4D3B2C]">
-          <div className="flex justify-between">
-            <span className="font-semibold">Export File:</span>
-            <span className="font-mono text-[#86611F] truncate max-w-[200px]">{filename}</span>
-          </div>
-          <div className="flex justify-between">
-            <span className="font-semibold">Batch Stamp:</span>
-            <span className="font-mono font-bold text-[#2A1D14]">{batchId}</span>
-          </div>
-          <div className="flex justify-between">
-            <span className="font-semibold">Items Exported:</span>
-            <span className="font-bold text-[#166534]">{count} garments</span>
-          </div>
+        <div className="bg-cream-200 p-3.5 rounded-[var(--radius-container)] border border-cocoa-200 flex flex-col gap-1.5 text-[0.82rem]">
+          {row('File', filename)}
+          {row('Batch', batchId)}
+          {row('Records', `${count}`)}
         </div>
 
-        <div className="flex items-start gap-2.5 p-3 rounded-xl bg-[#FCEFE6] text-[#B4531B] text-xs font-medium border border-[#F0CBAF]">
+        <div className="flex items-start gap-2.5 p-3 rounded-[var(--radius-container)] bg-gold-100 border border-gold-500 text-[0.82rem] text-[color:var(--color-warning)]">
           <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
           <div>
-            Confirming will mark these {count} items as submitted and reset your active session counter to 0. All records remain safely accessible in the History Archive.
+            Confirming marks these {count} record{count === 1 ? '' : 's'} as submitted and clears the active
+            session. They remain readable in History. These rows are already read-only either way, because they
+            have been written into a file.
           </div>
         </div>
 
-        <div className="flex items-center justify-end gap-3 pt-2">
+        <div className="flex items-center justify-end gap-2">
           <button
             type="button"
             onClick={onDismiss}
-            className="px-4 py-2.5 rounded-xl border border-[#E6D8C1] text-[#6B5442] font-semibold text-xs hover:bg-[#F4EADA] transition-colors"
+            className="px-4 min-h-[44px] rounded-[var(--radius-control)] border border-cocoa-200 text-navy-800 font-semibold text-[0.82rem] hover:bg-cream-200 cursor-pointer"
           >
-            Keep in Active Session
+            Not yet
           </button>
           <button
             type="button"
             disabled={isProcessing}
-            onClick={handleConfirm}
-            className="flex items-center gap-1.5 px-5 py-2.5 rounded-xl bg-[#86611F] hover:bg-[#A87C2E] text-white font-bold text-xs shadow-md transition-all active:scale-95 disabled:opacity-50"
+            onClick={() => void handleConfirm()}
+            className="flex items-center gap-2 px-5 min-h-[44px] rounded-[var(--radius-control)] bg-navy-800 text-cream-50 font-semibold text-[0.82rem] hover:bg-navy-700 active:bg-navy-950 disabled:opacity-50 cursor-pointer"
           >
             <CheckCircle2 className="w-4 h-4" />
-            <span>{isProcessing ? 'Finalizing...' : 'Confirm Session Cut-Off'}</span>
+            <span>{isProcessing ? 'Finalising…' : 'Confirm cut-off'}</span>
           </button>
         </div>
       </div>

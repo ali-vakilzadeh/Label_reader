@@ -1,23 +1,32 @@
 import React, { useState } from 'react';
-import { useLiveQuery } from 'dexie-react-hooks';
 import {
-  FileSpreadsheet,
-  CheckCircle2,
-  Copy,
-  Trash2,
   Archive,
-  Clock,
-  Layers,
-  Tag,
   Camera,
-  Lock
+  CheckCircle2,
+  Clock,
+  Copy,
+  FileSpreadsheet,
+  Layers,
+  Lock,
+  Pencil,
+  Tag,
+  Trash2
 } from 'lucide-react';
+import { useLiveQuery } from 'dexie-react-hooks';
 import { LedgerDao } from '../data/db';
 import { syncEngine } from '../services/syncEngine';
 import { CsvCutoffDialog } from '../components/CsvCutoffDialog';
 import { DuplicateModal } from '../components/DuplicateModal';
+import { LedgerEditModal } from '../components/LedgerEditModal';
 import { ExportBlockedError, NothingToExportError } from '../services/csvExport';
-import { isLedgerItemLocked, type DailyLedgerEntity } from '../types/models';
+import { useLanguage } from '../data/i18n';
+import { displayValue } from '../data/vocabulary';
+import {
+  isLedgerItemLocked,
+  missingRequiredFields,
+  type DailyLedgerEntity,
+  type GarmentFields
+} from '../types/models';
 import type { ShowToast } from '../App';
 
 interface DailyLedgerScreenProps {
@@ -25,23 +34,18 @@ interface DailyLedgerScreenProps {
   showToast: ShowToast;
 }
 
-export const DailyLedgerScreen: React.FC<DailyLedgerScreenProps> = ({
-  onNavigateToCapture,
-  showToast
-}) => {
+const chipClass = 'px-2 py-0.5 rounded-[var(--radius-control)] bg-cream-200 text-[0.75rem] text-navy-800';
+
+export const DailyLedgerScreen: React.FC<DailyLedgerScreenProps> = ({ onNavigateToCapture, showToast }) => {
+  const { language, t } = useLanguage();
   const [activeTab, setActiveTab] = useState<'active' | 'history'>('active');
-  const [duplicateTargetItem, setDuplicateTargetItem] = useState<DailyLedgerEntity | null>(null);
-
-  // CSV Two-Step state
-  const [csvDialogData, setCsvDialogData] = useState<{
-    batchId: string;
-    count: number;
-    filename: string;
-  } | null>(null);
-
+  const [duplicateTarget, setDuplicateTarget] = useState<DailyLedgerEntity | null>(null);
+  const [editTarget, setEditTarget] = useState<DailyLedgerEntity | null>(null);
+  const [csvDialogData, setCsvDialogData] = useState<{ batchId: string; count: number; filename: string } | null>(
+    null
+  );
   const [isExporting, setIsExporting] = useState(false);
 
-  // Live queries
   const activeLedger = useLiveQuery(() => LedgerDao.getActiveLedger(), []) || [];
   const allLedgerHistory = useLiveQuery(() => LedgerDao.getAllLedgerHistory(), []) || [];
   // Only rows that have never been written into a file can go into the next one.
@@ -50,23 +54,27 @@ export const DailyLedgerScreen: React.FC<DailyLedgerScreenProps> = ({
   const handleExportCsv = async () => {
     setIsExporting(true);
     try {
-      const exportResult = await syncEngine.generateAndDownloadCsv();
-      showToast('success', `Exported ${exportResult.count} garments to ${exportResult.filename}`, 'CSV Downloaded');
+      const result = await syncEngine.generateAndDownloadCsv();
+      showToast('success', `Exported ${result.count} garments to ${result.filename}`, 'CSV Downloaded');
 
-      // The gate was Off and rows went out short. Say so plainly rather than
-      // letting an incomplete file leave quietly.
-      if (exportResult.incomplete.length > 0) {
+      // The gate was Off and rows went out short. Say so rather than letting an
+      // incomplete file leave quietly.
+      if (result.incomplete.length > 0) {
         showToast(
           'warning',
-          `${exportResult.incomplete.length} record(s) were exported with blank columns.`,
+          `${result.incomplete.length} record(s) were exported with blank columns.`,
           'Incomplete Records'
         );
       }
-      setCsvDialogData(exportResult);
+      setCsvDialogData(result);
     } catch (err) {
       const error = err as Error;
       if (error instanceof ExportBlockedError) {
-        showToast('error', `${error.message} Complete them, or turn the export gate off in Settings.`, 'Export Blocked');
+        showToast(
+          'error',
+          `${error.message} Complete them, or turn the export gate off in Settings.`,
+          'Export Blocked'
+        );
       } else if (error instanceof NothingToExportError) {
         showToast('warning', error.message, 'Nothing to Export');
       } else {
@@ -79,248 +87,265 @@ export const DailyLedgerScreen: React.FC<DailyLedgerScreenProps> = ({
 
   const handleConfirmCutoff = async (batchId: string) => {
     await LedgerDao.confirmBatchSubmission(batchId, Date.now());
-    showToast('success', `Production batch ${batchId} marked as submitted. Active session reset!`, 'Cut-Off Complete');
+    showToast('success', `Batch ${batchId} confirmed. The session is reset.`, 'Cut-Off Complete');
+  };
+
+  const handleSaveEdit = async (
+    apparelId: string,
+    changes: { fields: GarmentFields; packageCode: string; setSize: number }
+  ) => {
+    const result = await LedgerDao.updateLedgerItem(apparelId, changes);
+    if (result === 'locked') {
+      showToast('warning', `${apparelId} is in an exported batch and can no longer be changed.`, t('Locked'));
+    } else if (result === 'missing') {
+      showToast('error', `${apparelId} is no longer in the ledger.`, 'Not Found');
+    } else {
+      showToast('success', `${apparelId} updated.`, 'Saved');
+    }
   };
 
   const handleDeleteItem = async (apparelId: string, e: React.MouseEvent) => {
     e.stopPropagation();
     const item = await LedgerDao.getLedgerItemById(apparelId);
     if (item && isLedgerItemLocked(item)) {
-      showToast('warning', `${apparelId} is already in an exported batch and cannot be deleted.`, 'Record Locked');
+      showToast('warning', `${apparelId} is already in an exported batch and cannot be deleted.`, t('Locked'));
       return;
     }
-    if (window.confirm(`Delete ledger entry for "${apparelId}"?`)) {
+    if (window.confirm(`Delete the ledger entry for "${apparelId}"?`)) {
       await LedgerDao.deleteLedgerItem(apparelId);
-      showToast('info', `Item ${apparelId} removed from ledger.`, 'Deleted');
+      showToast('info', `${apparelId} removed from the ledger.`, 'Deleted');
     }
   };
 
   const handleDuplicate = async (originalId: string, newBarcode: string) => {
     const original = await LedgerDao.getLedgerItemById(originalId);
-    if (!original) return;
+    if (!original) throw new Error(`${originalId} is no longer in the ledger.`);
 
-    const today = new Date().toISOString().split('T')[0];
-    const duplicated: DailyLedgerEntity = {
+    const existing = await LedgerDao.getLedgerItemById(newBarcode);
+    if (existing) throw new Error(`${newBarcode} is already in the ledger.`);
+
+    await LedgerDao.insertLedgerItem({
       ...original,
       apparelId: newBarcode,
       timestamp: Date.now(),
-      createdDate: today,
+      createdDate: new Date().toISOString().split('T')[0],
+      // A clone is a new article: never exported, whatever its parent's state.
       submittedToCsv: false,
       exportedAt: undefined,
       exportBatchId: undefined,
       submittedAt: undefined,
       editedByUser: true
-    };
-
-    await LedgerDao.insertLedgerItem(duplicated);
-    showToast('success', `Created clone ${newBarcode} with attributes from ${originalId}`, 'Garment Cloned');
+    });
+    showToast('success', `Cloned ${originalId} onto ${newBarcode}.`, 'Cloned');
   };
 
   const currentList = activeTab === 'active' ? activeLedger : allLedgerHistory;
 
+  const tabButton = (id: 'active' | 'history', label: string, count: number, Icon: typeof Clock) => (
+    <button
+      type="button"
+      onClick={() => setActiveTab(id)}
+      className={`flex-1 min-h-[44px] px-3 rounded-[var(--radius-control)] text-[0.82rem] flex items-center justify-center gap-2 transition-colors duration-[var(--motion-fast)] cursor-pointer ${
+        activeTab === id ? 'bg-navy-800 text-cream-50' : 'text-cocoa-600 hover:bg-cream-50'
+      }`}
+    >
+      <Icon className="w-4 h-4" />
+      <span>{label}</span>
+      <span
+        className={`text-[0.75rem] px-1.5 rounded-full ${
+          activeTab === id ? 'bg-navy-950 text-cream-50' : 'bg-cream-300 text-navy-800'
+        }`}
+      >
+        {count}
+      </span>
+    </button>
+  );
+
   return (
-    <div className="flex flex-col gap-5 pb-20">
-      {/* Title & Export Action Bar */}
-      <div className="flex items-center justify-between">
+    <div className="flex flex-col gap-4">
+      <div className="flex items-center justify-between gap-3">
         <div>
-          <div className="text-[11px] font-extrabold uppercase tracking-widest text-[#86611F]">
-            PRODUCTION AUDIT
+          <div className="text-[0.75rem] font-semibold uppercase tracking-wider text-cocoa-600">
+            Production audit
           </div>
-          <h1 className="text-xl sm:text-2xl font-black text-[#2A1D14] tracking-tight">
-            Verified Daily Ledger
-          </h1>
+          <h1 className="text-[1.1rem] font-semibold text-navy-900">{t('Ledger')}</h1>
         </div>
 
         <button
           type="button"
           onClick={handleExportCsv}
           disabled={isExporting || exportableCount === 0}
-          className="flex items-center gap-2 px-4 py-2.5 rounded-2xl bg-[#86611F] hover:bg-[#A87C2E] text-white font-extrabold text-xs shadow-md transition-all active:scale-95 disabled:opacity-40 cursor-pointer"
+          className="flex items-center gap-2 px-4 min-h-[44px] rounded-[var(--radius-control)] bg-navy-800 text-cream-50 font-semibold text-[0.82rem] hover:bg-navy-700 active:bg-navy-950 disabled:opacity-50 cursor-pointer"
         >
           <FileSpreadsheet className="w-4 h-4" />
-          <span>{isExporting ? 'Exporting…' : `Export CSV${exportableCount ? ` (${exportableCount})` : ''}`}</span>
-        </button>
-      </div>
-
-      {/* Tabs */}
-      <div className="flex items-center gap-2 p-1.5 rounded-2xl bg-[#F4EADA] border border-[#E6D8C1]">
-        <button
-          type="button"
-          onClick={() => setActiveTab('active')}
-          className={`flex-1 py-2.5 px-3 rounded-xl text-xs sm:text-sm font-bold flex items-center justify-center gap-2 transition-all cursor-pointer ${
-            activeTab === 'active'
-              ? 'bg-[#86611F] text-white shadow-md'
-              : 'text-[#6B5442] hover:text-[#2A1D14]'
-          }`}
-        >
-          <Clock className="w-4 h-4" />
-          <span>Active Session</span>
-          <span
-            className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full ${
-              activeTab === 'active' ? 'bg-white/20 text-white' : 'bg-[#E6D8C1] text-[#2A1D14]'
-            }`}
-          >
-            {activeLedger.length}
-          </span>
-        </button>
-
-        <button
-          type="button"
-          onClick={() => setActiveTab('history')}
-          className={`flex-1 py-2.5 px-3 rounded-xl text-xs sm:text-sm font-bold flex items-center justify-center gap-2 transition-all cursor-pointer ${
-            activeTab === 'history'
-              ? 'bg-[#86611F] text-white shadow-md'
-              : 'text-[#6B5442] hover:text-[#2A1D14]'
-          }`}
-        >
-          <Archive className="w-4 h-4" />
-          <span>History Archive</span>
-          <span
-            className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full ${
-              activeTab === 'history' ? 'bg-white/20 text-white' : 'bg-[#E6D8C1] text-[#2A1D14]'
-            }`}
-          >
-            {allLedgerHistory.length}
+          <span>
+            {isExporting ? 'Exporting…' : `${t('Export CSV')}${exportableCount ? ` (${exportableCount})` : ''}`}
           </span>
         </button>
       </div>
 
-      {/* Ledger List */}
-      <div className="flex flex-col gap-3.5">
+      <div className="flex items-center gap-1.5 p-1.5 rounded-[var(--radius-container)] bg-cream-200 border border-cocoa-200">
+        {tabButton('active', 'Active', activeLedger.length, Clock)}
+        {tabButton('history', 'History', allLedgerHistory.length, Archive)}
+      </div>
+
+      <div className="flex flex-col gap-3">
         {currentList.length === 0 ? (
-          <div className="bg-[#FFFDF9] p-8 rounded-3xl border border-[#E6D8C1] text-center flex flex-col items-center justify-center gap-3">
-            <div className="w-14 h-14 rounded-2xl bg-[#F4EADA] text-[#86611F] flex items-center justify-center">
-              <Layers className="w-7 h-7" />
+          <div className="bg-cream-50 p-8 rounded-[var(--radius-container)] border border-cocoa-200 shadow-[var(--shadow-card)] text-center flex flex-col items-center gap-3">
+            <div className="w-12 h-12 rounded-[var(--radius-container)] bg-cream-200 text-navy-800 flex items-center justify-center">
+              <Layers className="w-6 h-6" />
             </div>
-            <h3 className="text-base font-bold text-[#2A1D14]">
-              {activeTab === 'active' ? 'No Active Verified Garments' : 'No Archive Records Found'}
+            <h3 className="text-[0.88rem] font-semibold text-navy-900">
+              {activeTab === 'active' ? 'No verified garments yet' : 'No archived records'}
             </h3>
-            <p className="text-xs text-[#6B5442] max-w-sm">
+            <p className="text-[0.82rem] text-cocoa-600 max-w-sm">
               {activeTab === 'active'
-                ? 'Garments confirmed in the Verification Workspace will appear here ready for CSV batch export.'
-                : 'All past verified garments and submitted CSV batches will be stored here.'}
+                ? 'Records confirmed in Review appear here, ready for the CSV batch export.'
+                : 'Submitted batches are kept here.'}
             </p>
             {activeTab === 'active' && (
               <button
                 type="button"
                 onClick={onNavigateToCapture}
-                className="mt-2 flex items-center gap-2 px-5 py-2.5 rounded-xl bg-[#86611F] text-white font-bold text-xs shadow-md hover:bg-[#A87C2E] transition-all cursor-pointer active:scale-95"
+                className="flex items-center gap-2 px-4 min-h-[44px] rounded-[var(--radius-control)] bg-navy-800 text-cream-50 font-semibold text-[0.82rem] hover:bg-navy-700 cursor-pointer"
               >
                 <Camera className="w-4 h-4" />
-                <span>Start Intake</span>
+                <span>{t('Intake')}</span>
               </button>
             )}
           </div>
         ) : (
           currentList.map((item) => {
             const keyPhoto = item.photos[item.keyPhotoIndex] || item.photos[0];
-            const dateStr = new Date(item.timestamp).toLocaleString();
+            const locked = isLedgerItemLocked(item);
+            const missing = missingRequiredFields(item);
 
             return (
               <div
                 key={item.apparelId}
-                className="bg-[#FFFDF9] p-4 sm:p-5 rounded-3xl border border-[#E6D8C1] shadow-sm flex flex-col sm:flex-row items-start sm:items-center gap-4 transition-all"
+                className={`p-4 rounded-[var(--radius-container)] border shadow-[var(--shadow-card)] flex items-start gap-3 ${
+                  // Locked-row fill from the design basis, so an exported record reads
+                  // as settled rather than as one more editable row.
+                  locked ? 'bg-cream-300 border-cocoa-200' : 'bg-cream-50 border-cocoa-200'
+                }`}
               >
-                {/* Thumbnail */}
-                <div className="relative w-20 h-20 rounded-2xl overflow-hidden bg-[#2A1D14] flex-shrink-0 border border-[#E6D8C1]">
+                <div className="relative w-16 h-16 rounded-[var(--radius-control)] overflow-hidden bg-navy-900 flex-shrink-0 border border-cocoa-200">
                   {keyPhoto ? (
-                    <img src={keyPhoto} alt={item.apparelId} className="w-full h-full object-cover" />
+                    <img src={keyPhoto} alt="" className="w-full h-full object-cover" />
                   ) : (
-                    <div className="w-full h-full flex items-center justify-center text-[#BF9445]">
-                      <Tag className="w-6 h-6" />
-                    </div>
+                    <Tag className="w-5 h-5 text-cream-300 absolute inset-0 m-auto" />
                   )}
-                  <div className="absolute bottom-1 right-1 px-1.5 py-0.5 rounded bg-black/70 text-[9px] font-bold text-white backdrop-blur-sm">
-                    {item.photos.length}P
-                  </div>
+                  <span className="absolute bottom-0.5 right-0.5 px-1 rounded bg-navy-950/70 text-[9px] text-cream-50">
+                    {item.photos.length}
+                  </span>
                 </div>
 
-                {/* Details */}
-                <div className="flex-1 flex flex-col gap-1.5 min-w-0">
+                <div className="flex-1 flex flex-col gap-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
-                    <span className="font-mono font-black text-sm text-[#86611F]">
-                      {item.apparelId}
-                    </span>
+                    <span className="font-mono text-[0.82rem] text-navy-900">{item.apparelId}</span>
 
                     {item.submittedToCsv ? (
-                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-[#F4EADA] text-[#6B5442] border border-[#E6D8C1] flex items-center gap-1">
-                        <CheckCircle2 className="w-3 h-3 text-[#166534]" />
-                        SUBMITTED CSV ({item.exportBatchId || 'EXPORT'})
+                      <span className="text-[0.75rem] px-1.5 rounded bg-cream-200 text-cocoa-600 border border-cocoa-200 flex items-center gap-1">
+                        <CheckCircle2 className="w-3 h-3 text-[color:var(--color-good)]" />
+                        Submitted · {item.exportBatchId ?? 'batch'}
                       </span>
                     ) : item.exportBatchId ? (
-                      /* Written into a file already, so read-only from here on. */
-                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-cream-300 text-cocoa-600 border border-cocoa-200 flex items-center gap-1">
+                      <span className="text-[0.75rem] px-1.5 rounded bg-cream-200 text-cocoa-600 border border-cocoa-200 flex items-center gap-1">
                         <Lock className="w-3 h-3" />
-                        EXPORTED · LOCKED ({item.exportBatchId})
+                        {t('Exported')} · {item.exportBatchId}
                       </span>
                     ) : (
-                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-[#DCFCE7] text-[#166534] flex items-center gap-1">
-                        <CheckCircle2 className="w-3 h-3" />
-                        ACTIVE SESSION
+                      <span className="text-[0.75rem] px-1.5 rounded bg-cream-200 text-[color:var(--color-good)]">
+                        Active
+                      </span>
+                    )}
+
+                    {missing.length > 0 && !locked && (
+                      <span
+                        className="text-[0.75rem] px-1.5 rounded bg-gold-100 text-[color:var(--color-warning)] border border-gold-500"
+                        title={`Missing: ${missing.join(', ')}`}
+                      >
+                        {t('Incomplete')}
                       </span>
                     )}
                   </div>
 
-                  <div className="text-sm font-extrabold text-[#2A1D14]">
-                    {item.fields.brandName} • {item.fields.subCategory} ({item.fields.category})
+                  <div className="text-[0.88rem] text-navy-800 truncate">
+                    {item.fields.brandName} ·{' '}
+                    {displayValue(language, item.fields.subCategory, { table: 'sub_category' })} (
+                    {displayValue(language, item.fields.category, { table: 'category' })})
                   </div>
 
-                  {/* Attributes Badges */}
-                  <div className="flex items-center gap-1.5 text-[11px] text-[#6B5442] flex-wrap">
-                    <span className="px-2 py-0.5 rounded-md bg-[#F4EADA] font-semibold text-[#2A1D14]">
-                      {item.fields.gender}
-                    </span>
-                    <span className="px-2 py-0.5 rounded-md bg-[#F4EADA] font-semibold text-[#2A1D14]">
-                      {item.fields.season}
-                    </span>
-                    <span className="px-2 py-0.5 rounded-md bg-[#F4EADA] font-semibold text-[#2A1D14]">
-                      Size: {item.fields.size || 'N/A'}
-                    </span>
-                    <span className="px-2 py-0.5 rounded-md bg-[#F4EADA] font-semibold text-[#2A1D14]">
-                      {item.fields.color}
-                    </span>
-                    {item.fields.material && (
-                      <span className="px-2 py-0.5 rounded-md bg-[#F4EADA] font-semibold text-[#2A1D14] truncate max-w-[140px]">
-                        {item.fields.material}
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    {item.fields.gender && (
+                      <span className={chipClass}>
+                        {displayValue(language, item.fields.gender, { table: 'gender' })}
                       </span>
+                    )}
+                    {item.fields.season && (
+                      <span className={chipClass}>
+                        {displayValue(language, item.fields.season, { table: 'season' })}
+                      </span>
+                    )}
+                    {item.fields.size && <span className={chipClass}>{item.fields.size}</span>}
+                    {item.fields.color && (
+                      <span className={chipClass}>
+                        {displayValue(language, item.fields.color, { table: 'color' })}
+                      </span>
+                    )}
+                    {item.fields.material && (
+                      <span className={`${chipClass} truncate max-w-[160px]`}>{item.fields.material}</span>
                     )}
                     {item.fields.countryOfOrigin && (
-                      <span className="px-2 py-0.5 rounded-md bg-[#F4EADA] font-semibold text-[#2A1D14]">
-                        {item.fields.countryOfOrigin}
-                      </span>
+                      <span className={chipClass}>{item.fields.countryOfOrigin}</span>
                     )}
-                    {item.fields.originalPrice && (
-                      <span className="px-2 py-0.5 rounded-md bg-[#F4EADA] font-bold text-[#86611F]">
-                        {item.fields.originalPrice}
+                    {item.setSize > 1 && (
+                      <span className="px-2 py-0.5 rounded-[var(--radius-control)] bg-gold-100 border border-gold-500 text-[0.75rem] text-[color:var(--color-warning)]">
+                        {t('Set of')} {item.setSize}
                       </span>
                     )}
                   </div>
 
-                  <div className="text-[10px] text-[#7D6650] flex items-center gap-2 mt-0.5">
-                    <span>Operator: {item.userId}</span>
-                    <span>•</span>
-                    <span>{dateStr}</span>
+                  <div className="text-[0.75rem] text-cocoa-400 flex items-center gap-2 flex-wrap">
+                    <span>{item.userId}</span>
+                    <span>·</span>
+                    <span>{new Date(item.timestamp).toLocaleString()}</span>
+                    {item.packageCode && (
+                      <>
+                        <span>·</span>
+                        <span className="font-mono">{item.packageCode}</span>
+                      </>
+                    )}
                   </div>
                 </div>
 
-                {/* Card Actions */}
-                <div className="flex items-center gap-2 self-end sm:self-center">
+                <div className="flex flex-col items-end gap-1.5 flex-shrink-0">
                   <button
                     type="button"
-                    onClick={() => setDuplicateTargetItem(item)}
-                    title="Duplicate Composition (Clone Barcode)"
-                    className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-[#F4EADA] hover:bg-[#E6D8C1] text-[#86611F] font-bold text-xs transition-colors cursor-pointer"
+                    onClick={() => setEditTarget(item)}
+                    aria-label={locked ? 'View this exported record' : t('Edit')}
+                    title={locked ? 'Exported records are read-only' : t('Edit')}
+                    className="p-2.5 rounded-[var(--radius-control)] bg-cream-200 text-navy-800 hover:bg-cream-50 cursor-pointer"
                   >
-                    <Copy className="w-3.5 h-3.5" />
-                    <span>Clone</span>
+                    {locked ? <Lock className="w-4 h-4" /> : <Pencil className="w-4 h-4" />}
                   </button>
 
                   <button
                     type="button"
-                    onClick={(e) => handleDeleteItem(item.apparelId, e)}
-                    disabled={isLedgerItemLocked(item)}
-                    title={isLedgerItemLocked(item) ? 'Exported records are read-only' : 'Delete Entry'}
-                    className="p-2 rounded-xl text-[#7D6650] hover:text-red-600 hover:bg-red-50 transition-colors cursor-pointer disabled:opacity-30 disabled:hover:text-[#7D6650] disabled:hover:bg-transparent disabled:cursor-not-allowed"
+                    onClick={() => setDuplicateTarget(item)}
+                    aria-label={t('Clone')}
+                    className="p-2.5 rounded-[var(--radius-control)] bg-cream-200 text-navy-800 hover:bg-cream-50 cursor-pointer"
+                  >
+                    <Copy className="w-4 h-4" />
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={(e) => void handleDeleteItem(item.apparelId, e)}
+                    disabled={locked}
+                    aria-label={t('Delete')}
+                    title={locked ? 'Exported records are read-only' : t('Delete')}
+                    className="p-2.5 rounded-[var(--radius-control)] text-cocoa-400 hover:text-[color:var(--color-critical)] disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
                   >
                     <Trash2 className="w-4 h-4" />
                   </button>
@@ -331,7 +356,6 @@ export const DailyLedgerScreen: React.FC<DailyLedgerScreenProps> = ({
         )}
       </div>
 
-      {/* CSV Cut-Off Dialog */}
       {csvDialogData && (
         <CsvCutoffDialog
           batchId={csvDialogData.batchId}
@@ -342,13 +366,16 @@ export const DailyLedgerScreen: React.FC<DailyLedgerScreenProps> = ({
         />
       )}
 
-      {/* Duplicate / Clone Modal */}
-      {duplicateTargetItem && (
+      {duplicateTarget && (
         <DuplicateModal
-          sourceItem={duplicateTargetItem}
-          onClose={() => setDuplicateTargetItem(null)}
+          sourceItem={duplicateTarget}
+          onClose={() => setDuplicateTarget(null)}
           onDuplicate={handleDuplicate}
         />
+      )}
+
+      {editTarget && (
+        <LedgerEditModal item={editTarget} onClose={() => setEditTarget(null)} onSave={handleSaveEdit} />
       )}
     </div>
   );

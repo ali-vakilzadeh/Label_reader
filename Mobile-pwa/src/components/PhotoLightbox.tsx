@@ -7,8 +7,13 @@ interface PhotoLightboxProps {
   isKey: boolean;
   onClose: () => void;
   onSetKey: (index: number) => void;
-  onDelete: (index: number) => void;
+  onDelete?: (index: number) => void;
   onNavigate: (index: number) => void;
+  /**
+   * Photos are the evidence behind an extraction the server already holds, so once a
+   * scan is submitted they can be re-starred but not removed.
+   */
+  canDelete?: boolean;
 }
 
 /**
@@ -25,7 +30,8 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
   onClose,
   onSetKey,
   onDelete,
-  onNavigate
+  onNavigate,
+  canDelete = true
 }) => {
   const photo = photos[index];
   if (!photo) return null;
@@ -66,14 +72,16 @@ export const PhotoLightbox: React.FC<PhotoLightboxProps> = ({
           <Star className={`w-6 h-6 ${isKey ? 'fill-current' : ''}`} />
         </button>
 
-        <button
-          type="button"
-          onClick={() => onDelete(index)}
-          aria-label="Delete photo"
-          className="w-14 h-14 rounded-full bg-navy-950/60 text-[color:var(--color-critical)] flex items-center justify-center cursor-pointer"
-        >
-          <Trash2 className="w-6 h-6" />
-        </button>
+        {canDelete && onDelete && (
+          <button
+            type="button"
+            onClick={() => onDelete(index)}
+            aria-label="Delete photo"
+            className="w-14 h-14 rounded-full bg-navy-950/60 text-[color:var(--color-critical)] flex items-center justify-center cursor-pointer"
+          >
+            <Trash2 className="w-6 h-6" />
+          </button>
+        )}
       </div>
 
       {photos.length > 1 && (

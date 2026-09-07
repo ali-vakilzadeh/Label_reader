@@ -12,6 +12,7 @@ import { useEffect, useState } from 'react';
 import { ReferenceDao } from './db';
 import {
   getBundledTables,
+  isUnmatched,
   mergeServerTables,
   searchTable,
   toArmenian,
@@ -20,6 +21,7 @@ import {
   type TableName
 } from './referenceTables';
 import { VisionApiService } from '../services/visionApiService';
+import type { UiLanguage } from '../types/models';
 
 type Listener = (snapshot: ReferenceSnapshot) => void;
 
@@ -140,6 +142,31 @@ export function labelFor(name: TableName, en: string): string {
 
 export function suggestionsFor(name: TableName, query: string, limit = 8) {
   return searchTable(vocabulary.table(name), query, limit);
+}
+
+/**
+ * What to show the operator for one stored English value.
+ *
+ * Armenian comes from two places and never from a translator. `data_hy`, when the
+ * server sent one, is authoritative: a material composition is not a table key and
+ * cannot be looked up in one step. Otherwise the reference table supplies the label.
+ * A `null` in `data_hy` means "no Armenian exists - show the English value"; it never
+ * means show nothing (api_contract.md section 4.2).
+ */
+export function displayValue(
+  language: UiLanguage,
+  en: string,
+  options: { table?: TableName; fromServer?: string | null } = {}
+): string {
+  if (!en) return '';
+  if (language === 'en') return en;
+  if (options.fromServer) return options.fromServer;
+  return options.table ? labelFor(options.table, en) : en;
+}
+
+/** True when a value is outside its table and should be marked, not corrected. */
+export function isValueUnmatched(name: TableName, en: string): boolean {
+  return isUnmatched(vocabulary.table(name), en);
 }
 
 /**
