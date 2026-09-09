@@ -60,7 +60,10 @@ export const ReviewScreen: React.FC<ReviewScreenProps> = ({ onNavigateToCapture,
   const handleRetryScan = async (scan: ScanEntity, e: React.MouseEvent) => {
     e.stopPropagation();
     try {
-      await syncEngine.submitScan(scan);
+      // Retry is the operator overriding the 4xx verdict - a clone whose parent has
+      // since been uploaded is the case that matters - so the permanent mark is
+      // lifted for this attempt and only reapplied if the server refuses again.
+      await syncEngine.submitScan({ ...scan, permanentFailure: false });
       showToast('info', `Re-submitting ${scan.apparelId}…`, 'Retry Triggered');
     } catch (err) {
       showToast('error', (err as Error).message || 'Retry failed', 'Error');

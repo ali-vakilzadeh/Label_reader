@@ -198,6 +198,43 @@ export interface ScanEntity {
   /** v1.4 envelope field. Pre-selected in review; the operator still decides. */
   suggestedKeyPhotoIndex?: number | null;
 
+  /**
+   * True once the operator has deliberately chosen a key photo - the star shutter or
+   * the star in the lightbox. False means the app picked the first photo as a default,
+   * and `suggested_key_photo_index` is allowed to replace it when the result arrives.
+   */
+  keyPhotoExplicit?: boolean;
+
+  /**
+   * The care URL decoded on the device, if the operator ran the QR reader at capture.
+   *
+   * Held apart from `extracted.careInfo` because the AI result replaces `extracted`
+   * wholesale, and a machine-decoded QR outranks the model's read of the same code:
+   * Gemini is not a QR decoder and a plausible-looking wrong URL cannot be spotted by
+   * eye (api_contract.md section 8.4).
+   */
+  deviceCareInfo?: string;
+
+  /**
+   * Parent barcode when this record exists only to register a clone with the server
+   * (contract section 4.2 `cloned_from`). The ledger row is written locally the moment
+   * the operator confirms; this rides the normal sync queue so the server gets its own
+   * record - and its catalog image - with retry and the storage invariant for free.
+   */
+  clonedFrom?: string;
+
+  /**
+   * Earliest epoch-ms at which this scan may be polled again, from the server's own
+   * `retry_after_seconds`. Contract section 5.1: do not poll faster than instructed.
+   */
+  nextPollAt?: number;
+
+  /**
+   * Set when the server answered 4xx. Nothing was stored and resending the same
+   * request cannot help (contract section 2), so the sync loop stops offering it.
+   */
+  permanentFailure?: boolean;
+
   /** The 13 extracted values, English keys. */
   extracted: GarmentFields;
   /** Armenian labels from `data_hy`, by contract key. Empty on a pre-v1.4 server. */

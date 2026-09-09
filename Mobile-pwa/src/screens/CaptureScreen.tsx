@@ -28,6 +28,9 @@ export const CaptureScreen: React.FC<CaptureScreenProps> = ({ onScanSaved, showT
   const [packageCode, setPackageCode] = useState(getStickyPackageCode);
   const [photos, setPhotos] = useState<string[]>([]);
   const [keyPhotoIndex, setKeyPhotoIndex] = useState(0);
+  // False while the key photo is only the app's default - the first shot taken. The
+  // model's suggestion is allowed to replace a default, never a deliberate choice.
+  const [keyPhotoExplicit, setKeyPhotoExplicit] = useState(false);
   const [careInfo, setCareInfo] = useState('');
   const [torchMode, setTorchMode] = useState<TorchMode>(() => loadSettings().torchMode);
   const [isFinishing, setIsFinishing] = useState(false);
@@ -54,16 +57,35 @@ export const CaptureScreen: React.FC<CaptureScreenProps> = ({ onScanSaved, showT
     setPhotos((prev) => {
       if (prev.length >= 8) return prev;
       const next = [...prev, dataUrl];
-      if (asKey || prev.length === 0) setKeyPhotoIndex(next.length - 1);
+      if (asKey) {
+        // The star shutter: the operator said "this one".
+        setKeyPhotoIndex(next.length - 1);
+        setKeyPhotoExplicit(true);
+      } else if (prev.length === 0) {
+        // Nothing chosen yet, so the first photo stands in until someone - the
+        // operator or the model - says otherwise.
+        setKeyPhotoIndex(0);
+      }
       return next;
     });
+  };
+
+  /** The star in the photo viewer. Same meaning as the star shutter. */
+  const handleSetKeyPhoto = (index: number) => {
+    setKeyPhotoIndex(index);
+    setKeyPhotoExplicit(true);
   };
 
   const handleDeletePhoto = (index: number) => {
     setPhotos((prev) => {
       const next = prev.filter((_, i) => i !== index);
       setKeyPhotoIndex((current) => {
-        if (index === current) return 0;
+        if (index === current) {
+          // The chosen photo is gone, so the record is back on the default and the
+          // model's suggestion becomes useful again.
+          setKeyPhotoExplicit(false);
+          return 0;
+        }
         return index < current ? current - 1 : current;
       });
       return next;
@@ -81,6 +103,7 @@ export const CaptureScreen: React.FC<CaptureScreenProps> = ({ onScanSaved, showT
     setBarcode('');
     setPhotos([]);
     setKeyPhotoIndex(0);
+    setKeyPhotoExplicit(false);
     setCareInfo('');
     setPhase('barcode');
   };
@@ -101,8 +124,9 @@ export const CaptureScreen: React.FC<CaptureScreenProps> = ({ onScanSaved, showT
     try {
       const settings = loadSettings();
       const extracted = emptyGarmentFields();
-      // A QR read on the device is a real value for the field, and it survives even
-      // when the server is too old to return care_info of its own.
+      // A QR read on the device is a real value for the field. It is also kept in
+      // `deviceCareInfo`, which is what actually makes it survive: the AI result
+      // replaces `extracted` wholesale, and the device's read outranks the model's.
       if (careInfo) extracted.careInfo = careInfo;
 
       const newScan: ScanEntity = {
@@ -111,6 +135,8 @@ export const CaptureScreen: React.FC<CaptureScreenProps> = ({ onScanSaved, showT
         timestamp: Date.now(),
         photos,
         keyPhotoIndex: Math.min(keyPhotoIndex, photos.length - 1),
+        keyPhotoExplicit,
+        deviceCareInfo: careInfo || undefined,
         status: 0,
         serverStored: false,
         processingStatus: 'PENDING_AI',
@@ -151,7 +177,7 @@ export const CaptureScreen: React.FC<CaptureScreenProps> = ({ onScanSaved, showT
         isFinishing={isFinishing}
         onTorchModeChange={handleTorchModeChange}
         onCapture={handleCapture}
-        onSetKey={setKeyPhotoIndex}
+        onSetKey={handleSetKeyPhoto}
         onDeletePhoto={handleDeletePhoto}
         onCareInfoDetected={handleCareInfoDetected}
         onBack={() => setPhase('barcode')}

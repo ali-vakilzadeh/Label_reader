@@ -2,6 +2,12 @@ import { ScanDao } from '../data/db';
 import { vocabulary } from '../data/vocabulary';
 import { VisionApiService } from './visionApiService';
 import { exportLedgerCsv, type ExportOutcome } from './csvExport';
+import {
+  clampPollSeconds,
+  pollDelaySeconds,
+  resolveCareInfo,
+  resolveKeyPhotoIndex
+} from './syncRules';
 import { AI_FIELDS, type AsyncVisionResponse, type ScanEntity } from '../types/models';
 
 type SyncListener = () => void;
@@ -89,8 +95,13 @@ class SyncEngine {
     await this.runSyncLoop();
   }
 
-  async submitScan(scan: ScanEntity, clonedFrom?: string) {
-    const result = await VisionApiService.submitVisionExtract(scan, clonedFrom);
+  /**
+   * Submits one scan. `cloned_from` is read off the entity rather than passed in, so
+   * a retry carries it too - a clone that failed its first upload must not be resent
+   * as a fresh extraction with no images.
+   */
+  async submitScan(scan: ScanEntity) {
+    const result = await VisionApiService.submitVisionExtract(scan, scan.clonedFrom);
 
     if (result.ok && result.response) {
       this.isServerReachable = true;
@@ -100,12 +111,16 @@ class SyncEngine {
       // holds the scan, so anything else leaves the photos in place to resend.
       const errorMessage = result.error || 'Upload transport failure';
       console.warn(`Scan ${scan.apparelId} submit failed:`, errorMessage);
-      this.isServerReachable = false;
+
+      // A 4xx is an answer, not silence: the server is plainly reachable, and the
+      // request is the thing that is wrong. Retrying it unchanged only burns battery.
+      if (!result.permanent) this.isServerReachable = false;
 
       await ScanDao.updateScan({
         ...scan,
         status: 3,
         serverStored: false,
+        permanentFailure: result.permanent ? true : scan.permanentFailure,
         errorMessage,
         lastAttemptTime: Date.now(),
         retryCount: scan.retryCount + 1
@@ -125,8 +140,27 @@ class SyncEngine {
    */
   private async handleAsyncResponse(scan: ScanEntity, response: AsyncVisionResponse) {
     const data = response.data;
+    const isReady =
+      response.processing_status === 'READY_TO_CONFIRM' || (response.status === 'success' && data);
 
-    if (response.processing_status === 'READY_TO_CONFIRM' || (response.status === 'success' && data)) {
+    // A clone was written into the ledger the moment the operator confirmed it, from
+    // values they had already checked. This request exists only so the server holds a
+    // record of the article and renders its catalog image, so the reply - which is the
+    // parent's raw AI output, not the corrected values - is acknowledged and dropped.
+    // Status 2 keeps it out of Review, where it would otherwise appear as a duplicate.
+    if (isReady && scan.clonedFrom) {
+      await ScanDao.updateScan({
+        ...scan,
+        status: 2,
+        serverStored: true,
+        processingStatus: 'READY_TO_CONFIRM',
+        nextPollAt: undefined,
+        errorMessage: undefined
+      });
+      return;
+    }
+
+    if (isReady) {
       const confidences: ScanEntity['confidences'] = {};
       for (const key of AI_FIELDS) {
         confidences[key] = data?.[key]?.confidence ?? 0;
@@ -134,12 +168,19 @@ class SyncEngine {
 
       const value = (key: (typeof AI_FIELDS)[number]) => data?.[key]?.value ?? '';
 
+      const careInfo = resolveCareInfo(scan, value('care_info'));
+      // A decoded symbol is not a guess, so it is not scored like one - and a full
+      // confidence keeps it out of the low-confidence highlight band.
+      if (careInfo.fromDevice) confidences.care_info = 1;
+
       await ScanDao.updateScan({
         ...scan,
         status: 1,
         serverStored: true,
         processingStatus: 'READY_TO_CONFIRM',
         suggestedKeyPhotoIndex: response.suggested_key_photo_index ?? null,
+        keyPhotoIndex: resolveKeyPhotoIndex(scan, response.suggested_key_photo_index),
+        nextPollAt: undefined,
         extracted: {
           brandName: value('brand_name'),
           countryOfOrigin: value('country_of_origin'),
@@ -153,7 +194,7 @@ class SyncEngine {
           subCategory: value('sub_category'),
           gender: value('gender'),
           season: value('season'),
-          careInfo: value('care_info')
+          careInfo: careInfo.value
         },
         armenian: response.data_hy ?? {},
         confidences,
@@ -166,10 +207,15 @@ class SyncEngine {
         status: 3,
         serverStored: true,
         processingStatus: 'NEEDS_ATTENTION',
+        // Terminal state: never poll it again (contract section 5.3).
+        nextPollAt: undefined,
         attentionReason: reason,
         errorMessage: reason
       });
     } else {
+      const retryAfterSeconds = clampPollSeconds(response.retry_after_seconds);
+      const delaySeconds = pollDelaySeconds(response);
+
       await ScanDao.updateScan({
         ...scan,
         status: 0,
@@ -177,8 +223,8 @@ class SyncEngine {
         processingStatus: 'PENDING_AI',
         queueDepth: response.queue_depth ?? 0,
         estimatedWaitSeconds: response.estimated_wait_seconds ?? undefined,
-        // Honour retry_after_seconds, clamped to the contract's 5-120s window.
-        retryAfterSeconds: Math.max(5, Math.min(120, response.retry_after_seconds || 5)),
+        retryAfterSeconds,
+        nextPollAt: Date.now() + delaySeconds * 1000,
         blockingFault: response.blocking_fault ?? undefined,
         errorMessage: undefined
       });

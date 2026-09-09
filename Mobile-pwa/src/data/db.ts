@@ -171,12 +171,33 @@ export const ScanDao = {
       .sortBy('timestamp');
   },
 
+  /**
+   * Scans the server does not hold yet. A 4xx is excluded: nothing was stored and
+   * resending the same request cannot change that (contract section 2), so retrying
+   * it forever would only burn battery and hide the real fault from the operator.
+   */
   async getScansNeedingUpload(): Promise<ScanEntity[]> {
-    return db.scans.filter((s) => !s.serverStored && (s.status === 0 || s.status === 3)).toArray();
+    return db.scans
+      .filter((s) => !s.serverStored && !s.permanentFailure && (s.status === 0 || s.status === 3))
+      .toArray();
   },
 
+  /**
+   * Scans that are queued on the server AND due a poll. `nextPollAt` comes from the
+   * server's own `retry_after_seconds`, so this is what keeps the app from polling
+   * faster than instructed (contract section 5.1). A row with no `nextPollAt` yet -
+   * a record from before this field existed - is due immediately.
+   */
   async getScansNeedingPolling(): Promise<ScanEntity[]> {
-    return db.scans.filter((s) => s.serverStored && s.processingStatus === 'PENDING_AI').toArray();
+    const now = Date.now();
+    return db.scans
+      .filter(
+        (s) =>
+          s.serverStored &&
+          s.processingStatus === 'PENDING_AI' &&
+          (!s.nextPollAt || s.nextPollAt <= now)
+      )
+      .toArray();
   },
 
   /** Persists the operator's in-progress edits without confirming the record. */

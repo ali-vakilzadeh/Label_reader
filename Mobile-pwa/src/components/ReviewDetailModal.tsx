@@ -55,11 +55,11 @@ export const ReviewDetailModal: React.FC<ReviewDetailModalProps> = ({
 }) => {
   const { t } = useLanguage();
 
-  // The server's suggestion is a pre-selection; the operator's choice is the authority
-  // and is what gets sent back (contract section 4.2).
-  const [selectedPhotoIndex, setSelectedPhotoIndex] = useState(
-    scan.suggestedKeyPhotoIndex ?? scan.keyPhotoIndex ?? 0
-  );
+  // `scan.keyPhotoIndex` already carries the outcome of the pre-selection: the sync
+  // engine applied the model's suggestion when the operator had not chosen a photo,
+  // and left their choice alone when they had (contract section 4.2). Both the viewer
+  // and the star read from it, so what is starred is what reaches the ledger.
+  const [selectedPhotoIndex, setSelectedPhotoIndex] = useState(scan.keyPhotoIndex ?? 0);
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
   const [keyPhotoIndex, setKeyPhotoIndex] = useState(scan.keyPhotoIndex ?? 0);
 

@@ -13,7 +13,7 @@ import {
   Trash2
 } from 'lucide-react';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { LedgerDao } from '../data/db';
+import { LedgerDao, ScanDao } from '../data/db';
 import { syncEngine } from '../services/syncEngine';
 import { CsvCutoffDialog } from '../components/CsvCutoffDialog';
 import { DuplicateModal } from '../components/DuplicateModal';
@@ -22,10 +22,12 @@ import { ExportBlockedError, NothingToExportError } from '../services/csvExport'
 import { useLanguage } from '../data/i18n';
 import { displayValue } from '../data/vocabulary';
 import {
+  emptyGarmentFields,
   isLedgerItemLocked,
   missingRequiredFields,
   type DailyLedgerEntity,
-  type GarmentFields
+  type GarmentFields,
+  type ScanEntity
 } from '../types/models';
 import type { ShowToast } from '../App';
 
@@ -136,6 +138,45 @@ export const DailyLedgerScreen: React.FC<DailyLedgerScreenProps> = ({ onNavigate
       submittedAt: undefined,
       editedByUser: true
     });
+
+    // The ledger row is the operator's deliverable and is written first, so a clone
+    // is never blocked by the network. But a clone is a real article: the server must
+    // hold its own record so it gets a catalog image and appears wherever the parent
+    // does. That goes through the normal scan queue - `cloned_from` needs no images
+    // (contract section 4.2) and rides the queue's retry and storage invariant.
+    if (!(await ScanDao.getScanById(newBarcode))) {
+      const registration: ScanEntity = {
+        apparelId: newBarcode,
+        userId: original.userId,
+        timestamp: Date.now(),
+        // The server rebinds the parent's photos; copying the base64 would double the
+        // storage on the device for nothing.
+        photos: [],
+        keyPhotoIndex: original.keyPhotoIndex,
+        // The ledger row is already confirmed, so nothing may revise its key photo.
+        keyPhotoExplicit: true,
+        clonedFrom: originalId,
+        status: 0,
+        serverStored: false,
+        processingStatus: 'PENDING_AI',
+        queueDepth: 0,
+        retryAfterSeconds: 5,
+        suggestedKeyPhotoIndex: null,
+        extracted: emptyGarmentFields(),
+        armenian: {},
+        confidences: {},
+        packageCode: original.packageCode,
+        setSize: original.setSize,
+        lastAttemptTime: 0,
+        retryCount: 0
+      };
+
+      await ScanDao.insertScan(registration);
+      // Not awaited: a clone must complete offline. The sync loop carries it, and a
+      // failure surfaces on the Review queue rather than blocking the dialog.
+      void syncEngine.submitScan(registration);
+    }
+
     showToast('success', `Cloned ${originalId} onto ${newBarcode}.`, 'Cloned');
   };
 

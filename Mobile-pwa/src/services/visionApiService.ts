@@ -157,7 +157,15 @@ export class VisionApiService {
   static async submitVisionExtract(
     scan: ScanEntity,
     clonedFrom?: string
-  ): Promise<{ ok: boolean; response?: AsyncVisionResponse; error?: string }> {
+  ): Promise<{
+    ok: boolean;
+    response?: AsyncVisionResponse;
+    error?: string;
+    /** HTTP status, absent when the request never reached the server. */
+    status?: number;
+    /** 4xx: nothing was stored and resending unchanged will not help (section 2). */
+    permanent?: boolean;
+  }> {
     const settings = loadSettings();
 
     let token = await this.getAuthToken();
@@ -209,7 +217,14 @@ export class VisionApiService {
 
       const body = await res.json().catch(() => null);
       const code = body?.error_code ? `${body.error_code}: ` : '';
-      return { ok: false, error: `${code}${body?.message || `HTTP ${res.status}`}` };
+      return {
+        ok: false,
+        error: `${code}${body?.message || `HTTP ${res.status}`}`,
+        status: res.status,
+        // A 4xx is a verdict on the request itself, not a transport hiccup: the
+        // server does not have the scan and never will until the request changes.
+        permanent: res.status >= 400 && res.status < 500
+      };
     } catch (err) {
       return { ok: false, error: (err as Error).message || 'Transport failure' };
     }
