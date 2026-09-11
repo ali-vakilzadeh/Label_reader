@@ -23,7 +23,6 @@ type Dict = Record<string, string>;
 /** Armenian chrome. A key absent here falls back to its English text. */
 const HY: Dict = {
   // Navigation
-  Intake: 'Ընդունում',
   Review: 'Ստուգում',
   Ledger: 'Մատյան',
   Settings: 'Կարգավորումներ',
@@ -57,7 +56,6 @@ const HY: Dict = {
   Edit: 'Խմբագրել',
   Retry: 'Կրկնել',
   Scan: 'Սկանավորել',
-  'Start Scan': 'Սկսել սկանավորումը',
   'Export CSV': 'Արտահանել CSV',
   Reset: 'Զրոյացնել',
 

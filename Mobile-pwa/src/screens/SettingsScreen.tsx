@@ -352,7 +352,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ showToast, onSet
             onChange={(e) => change('defaultStartDestination', e.target.value as AppSettingsData['defaultStartDestination'])}
             className={fieldClass}
           >
-            <option value="capture">Intake — barcode &amp; camera</option>
+            <option value="capture">Scan — camera, barcode &amp; QR</option>
             <option value="review">Review — verify extractions</option>
             <option value="ledger">Ledger — daily audit</option>
             <option value="settings">Settings</option>

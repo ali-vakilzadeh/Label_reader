@@ -102,6 +102,12 @@
     padding-right: env(safe-area-inset-right, 0px);
   }
   /* Scroll containers reserve room so content can clear the fixed bars. */
+  /* Exactly the tab bar and the home indicator - no reading gap. The scan screen
+     sizes its camera against this, so any slack here would shrink the preview. */
+  .pb-tabbar {
+    padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 56px);
+  }
+
   .pb-safe-nav {
     padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 5.5rem);
   }

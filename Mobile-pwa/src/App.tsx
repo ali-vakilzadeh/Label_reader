@@ -20,9 +20,9 @@ export type ShowToast = (
   title?: string
 ) => void;
 
-/** Left to right: Intake, Review, Ledger, Settings (client decision 15). */
+/** Left to right: Scan, Review, Ledger, Settings (client decision 15). */
 const TABS: Array<{ id: ScreenType; label: string; Icon: typeof Camera }> = [
-  { id: 'capture', label: 'Intake', Icon: Camera },
+  { id: 'capture', label: 'Scan', Icon: Camera },
   { id: 'review', label: 'Review', Icon: ShieldCheck },
   { id: 'ledger', label: 'Ledger', Icon: Layers },
   { id: 'settings', label: 'Settings', Icon: SettingsIcon }
@@ -80,53 +80,69 @@ export const App: React.FC = () => {
   const badgeFor = (id: ScreenType) =>
     id === 'review' ? readyReviewCount : id === 'ledger' ? activeLedgerCount : 0;
 
+  // The scan screen is the camera and nothing else: no brand bar competing with the
+  // preview for the top of the display, no scroll, and no page padding between the
+  // preview and the edge of the screen (client decisions 2 and 3, 2026-09-12).
+  const isScanScreen = currentScreen === 'capture';
+
   return (
-    <div className="flex flex-col min-h-screen bg-cream-100 text-navy-800 antialiased">
+    <div
+      className={`flex flex-col bg-cream-100 text-navy-800 antialiased ${
+        isScanScreen ? 'h-[100dvh] overflow-hidden' : 'min-h-screen'
+      }`}
+    >
       <ToastContainer toasts={toasts} onDismiss={(id) => setToasts((p) => p.filter((t) => t.id !== id))} />
 
       {/* Brand bar. Pads itself out of the notch rather than relying on body padding,
           which fixed and sticky chrome does not inherit. */}
-      <header className="sticky top-0 z-40 safe-top safe-x bg-navy-900 border-b border-navy-700">
-        <div className="px-4 py-2.5 sm:px-6 flex items-center justify-between min-h-[56px]">
-          <div className="flex items-baseline gap-2">
-            <span className="text-cream-50 font-semibold tracking-tight">OutFit</span>
-            <span className="text-[0.82rem] text-[color:var(--color-gold-wordmark)]">Label Reader</span>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <div
-              className={`flex items-center gap-1 px-2 py-1 rounded-[var(--radius-control)] text-[0.75rem] ${
-                isServerOnline ? 'text-cream-300' : 'text-[color:var(--color-gold-wordmark)]'
-              }`}
-            >
-              {isServerOnline ? <Wifi className="w-3.5 h-3.5" /> : <WifiOff className="w-3.5 h-3.5" />}
-              <span className="hidden sm:inline">{isServerOnline ? 'online' : `offline · queue ${readyReviewCount + activeLedgerCount}`}</span>
+      {!isScanScreen && (
+        <header className="sticky top-0 z-40 safe-top safe-x bg-navy-900 border-b border-navy-700">
+          <div className="px-4 py-2.5 sm:px-6 flex items-center justify-between min-h-[56px]">
+            <div className="flex items-baseline gap-2">
+              <span className="text-cream-50 font-semibold tracking-tight">OutFit</span>
+              <span className="text-[0.82rem] text-[color:var(--color-gold-wordmark)]">Label Reader</span>
             </div>
 
-            {settings.userId && (
-              <div className="flex items-center gap-1.5 px-2 py-1 rounded-[var(--radius-control)] bg-navy-800 text-[0.75rem] text-cream-300">
-                <User className="w-3 h-3" />
-                <span className="truncate max-w-[90px]">{settings.userId}</span>
+            <div className="flex items-center gap-2">
+              <div
+                className={`flex items-center gap-1 px-2 py-1 rounded-[var(--radius-control)] text-[0.75rem] ${
+                  isServerOnline ? 'text-cream-300' : 'text-[color:var(--color-gold-wordmark)]'
+                }`}
+              >
+                {isServerOnline ? <Wifi className="w-3.5 h-3.5" /> : <WifiOff className="w-3.5 h-3.5" />}
+                <span className="hidden sm:inline">{isServerOnline ? 'online' : `offline · queue ${readyReviewCount + activeLedgerCount}`}</span>
               </div>
-            )}
-          </div>
-        </div>
-      </header>
 
-      <main className="flex-1 w-full max-w-3xl mx-auto px-3.5 py-4 sm:px-6 safe-x pb-safe-nav">
-        {currentScreen === 'capture' && (
-          <CaptureScreen onScanSaved={() => setCurrentScreen('review')} showToast={showToast} />
-        )}
-        {currentScreen === 'review' && (
-          <ReviewScreen onNavigateToCapture={() => setCurrentScreen('capture')} showToast={showToast} />
-        )}
-        {currentScreen === 'ledger' && (
-          <DailyLedgerScreen onNavigateToCapture={() => setCurrentScreen('capture')} showToast={showToast} />
-        )}
-        {currentScreen === 'settings' && (
-          <SettingsScreen showToast={showToast} onSettingsChanged={handleSettingsChanged} />
-        )}
-      </main>
+              {settings.userId && (
+                <div className="flex items-center gap-1.5 px-2 py-1 rounded-[var(--radius-control)] bg-navy-800 text-[0.75rem] text-cream-300">
+                  <User className="w-3 h-3" />
+                  <span className="truncate max-w-[90px]">{settings.userId}</span>
+                </div>
+              )}
+            </div>
+          </div>
+        </header>
+      )}
+
+      {isScanScreen ? (
+        // Full bleed, and exactly the height left over once the tab bar has taken its
+        // own. The camera surface inside fills this box and never scrolls.
+        <main className="flex-1 min-h-0 relative pb-tabbar">
+          <CaptureScreen showToast={showToast} />
+        </main>
+      ) : (
+        <main className="flex-1 w-full max-w-3xl mx-auto px-3.5 py-4 sm:px-6 safe-x pb-safe-nav">
+          {currentScreen === 'review' && (
+            <ReviewScreen onNavigateToCapture={() => setCurrentScreen('capture')} showToast={showToast} />
+          )}
+          {currentScreen === 'ledger' && (
+            <DailyLedgerScreen onNavigateToCapture={() => setCurrentScreen('capture')} showToast={showToast} />
+          )}
+          {currentScreen === 'settings' && (
+            <SettingsScreen showToast={showToast} onSettingsChanged={handleSettingsChanged} />
+          )}
+        </main>
+      )}
 
       {/* Tab bar: 56px, sits at the foot of the layout and pads itself clear of the
           home indicator so a scrolled screen never collides with it. */}

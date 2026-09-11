@@ -3,7 +3,7 @@ import { Layers } from 'lucide-react';
 import { FieldShell } from './FieldShell';
 
 export const MIN_SET_SIZE = 1;
-export const MAX_SET_SIZE = 10;
+export const MAX_SET_SIZE = 12;
 
 interface SetSizeSelectorProps {
   value: number;

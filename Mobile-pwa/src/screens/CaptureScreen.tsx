@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { BarcodeScanStep } from '../components/BarcodeScanStep';
-import { CameraCaptureStep } from '../components/CameraCaptureStep';
+import { ScanCamera } from '../components/ScanCamera';
+import { MIN_SET_SIZE } from '../components/fields/SetSizeSelector';
 import { ScanDao } from '../data/db';
 import { syncEngine } from '../services/syncEngine';
 import { getStickyPackageCode, loadSettings, saveSettings, setStickyPackageCode } from '../data/settingsStorage';
@@ -8,24 +8,22 @@ import { emptyGarmentFields, type ScanEntity, type TorchMode } from '../types/mo
 import type { ShowToast } from '../App';
 
 interface CaptureScreenProps {
-  onScanSaved: (apparelId: string) => void;
   showToast: ShowToast;
 }
 
-type Phase = 'barcode' | 'camera';
-
 /**
- * Intake, in two phases (client decision 5-A).
+ * Intake, on one screen (client decisions 1-4-9, 2026-09-12).
  *
- * Phase one settles the identity of the item - the barcode, scanned or typed, and the
- * package it is going into. Phase two is the full-screen camera. Splitting them is
- * what lets the camera fill the screen: there are no form fields left to make room for.
+ * This component owns everything that survives a single photo - the barcode, the
+ * package, the set size, the photos and the care URL - and `ScanCamera` owns only
+ * what is on screen. Committing writes the record locally first and hands it to the
+ * sync engine second, so an intake is never blocked on the network.
  */
-export const CaptureScreen: React.FC<CaptureScreenProps> = ({ onScanSaved, showToast }) => {
-  const [phase, setPhase] = useState<Phase>('barcode');
+export const CaptureScreen: React.FC<CaptureScreenProps> = ({ showToast }) => {
   const [barcode, setBarcode] = useState('');
   // Seeded from the last value the operator typed and left alone (decision 6).
   const [packageCode, setPackageCode] = useState(getStickyPackageCode);
+  const [setSize, setSetSize] = useState(MIN_SET_SIZE);
   const [photos, setPhotos] = useState<string[]>([]);
   const [keyPhotoIndex, setKeyPhotoIndex] = useState(0);
   // False while the key photo is only the app's default - the first shot taken. The
@@ -43,34 +41,30 @@ export const CaptureScreen: React.FC<CaptureScreenProps> = ({ onScanSaved, showT
   const handlePackageCodeChange = (value: string) => {
     setPackageCode(value);
     setStickyPackageCode(value);
+    showToast(
+      'success',
+      value ? `Package ${value} — kept for the next scans.` : 'Package code cleared.',
+      'Package'
+    );
   };
 
   const handleBarcodeDetected = (detected: string) => {
-    // Only fills an empty field. Overwriting a barcode the operator has already
-    // accepted would let a code drifting through frame silently reassign the item.
-    if (barcode.trim()) return;
+    if (detected === barcode) return;
     setBarcode(detected);
     showToast('success', `Barcode detected: ${detected}`, 'Scanned');
   };
 
-  const handleCapture = (dataUrl: string, asKey: boolean) => {
+  const handleCapture = (dataUrl: string) => {
     setPhotos((prev) => {
       if (prev.length >= 8) return prev;
-      const next = [...prev, dataUrl];
-      if (asKey) {
-        // The star shutter: the operator said "this one".
-        setKeyPhotoIndex(next.length - 1);
-        setKeyPhotoExplicit(true);
-      } else if (prev.length === 0) {
-        // Nothing chosen yet, so the first photo stands in until someone - the
-        // operator or the model - says otherwise.
-        setKeyPhotoIndex(0);
-      }
-      return next;
+      // Nothing chosen yet, so the first photo stands in until someone - the operator
+      // in the photo preview, or the model - says otherwise.
+      if (prev.length === 0) setKeyPhotoIndex(0);
+      return [...prev, dataUrl];
     });
   };
 
-  /** The star in the photo viewer. Same meaning as the star shutter. */
+  /** The star in the photo preview: the operator said "this one". */
   const handleSetKeyPhoto = (index: number) => {
     setKeyPhotoIndex(index);
     setKeyPhotoExplicit(true);
@@ -98,21 +92,26 @@ export const CaptureScreen: React.FC<CaptureScreenProps> = ({ onScanSaved, showT
     showToast('success', 'Care QR code read into CareInfo.', 'QR Decoded');
   };
 
-  /** Clears the item but keeps the package code — the box has not changed. */
+  /**
+   * Clears the article, keeps the box.
+   *
+   * The package code is sticky by decision 6 - the operator is filling one carton over
+   * many scans. Set size is not: it describes one article, so leaving it at 2 would
+   * silently double-count the next garment.
+   */
   const resetItem = () => {
     setBarcode('');
     setPhotos([]);
     setKeyPhotoIndex(0);
     setKeyPhotoExplicit(false);
     setCareInfo('');
-    setPhase('barcode');
+    setSetSize(MIN_SET_SIZE);
   };
 
   const handleFinishItem = async () => {
     const trimmedBarcode = barcode.trim();
     if (!trimmedBarcode) {
-      showToast('error', 'Scan or type a garment barcode before finishing.', 'Barcode Required');
-      setPhase('barcode');
+      showToast('error', 'Scan or type a garment barcode before sending.', 'Barcode Required');
       return;
     }
     if (photos.length === 0) {
@@ -147,7 +146,7 @@ export const CaptureScreen: React.FC<CaptureScreenProps> = ({ onScanSaved, showT
         armenian: {},
         confidences: careInfo ? { care_info: 1 } : {},
         packageCode: packageCode.trim(),
-        setSize: 1,
+        setSize,
         lastAttemptTime: 0,
         retryCount: 0
       };
@@ -155,9 +154,10 @@ export const CaptureScreen: React.FC<CaptureScreenProps> = ({ onScanSaved, showT
       await ScanDao.insertScan(newScan);
       if (settings.autoSyncAiVision) void syncEngine.submitScan(newScan);
 
-      showToast('success', `${trimmedBarcode} queued for AI extraction.`, 'Intake Complete');
+      showToast('success', `${trimmedBarcode} queued for AI extraction.`, 'Scan Committed');
+      // The operator stays on the camera for the next garment; the Review tab carries
+      // the count of what is waiting.
       resetItem();
-      onScanSaved(trimmedBarcode);
     } catch (err) {
       showToast('error', (err as Error).message || 'Failed to save scan', 'Error');
     } finally {
@@ -165,36 +165,29 @@ export const CaptureScreen: React.FC<CaptureScreenProps> = ({ onScanSaved, showT
     }
   };
 
-  if (phase === 'camera') {
-    return (
-      <CameraCaptureStep
-        barcode={barcode}
-        packageCode={packageCode}
-        photos={photos}
-        keyPhotoIndex={keyPhotoIndex}
-        careInfo={careInfo}
-        torchMode={torchMode}
-        isFinishing={isFinishing}
-        onTorchModeChange={handleTorchModeChange}
-        onCapture={handleCapture}
-        onSetKey={handleSetKeyPhoto}
-        onDeletePhoto={handleDeletePhoto}
-        onCareInfoDetected={handleCareInfoDetected}
-        onBack={() => setPhase('barcode')}
-        onFinish={handleFinishItem}
-      />
-    );
-  }
-
   return (
-    <BarcodeScanStep
+    <ScanCamera
       barcode={barcode}
       onBarcodeChange={setBarcode}
       packageCode={packageCode}
       onPackageCodeChange={handlePackageCodeChange}
+      setSize={setSize}
+      onSetSizeChange={setSetSize}
+      photos={photos}
+      keyPhotoIndex={keyPhotoIndex}
+      careInfo={careInfo}
       torchMode={torchMode}
-      onStartScan={() => setPhase('camera')}
+      isFinishing={isFinishing}
+      onTorchModeChange={handleTorchModeChange}
+      onCapture={handleCapture}
+      onSetKey={handleSetKeyPhoto}
+      onDeletePhoto={handleDeletePhoto}
       onBarcodeDetected={handleBarcodeDetected}
+      onCareInfoDetected={handleCareInfoDetected}
+      onTorchUnavailable={() =>
+        showToast('info', 'This device exposes no torch control to the browser.', 'Torch Unavailable')
+      }
+      onFinish={handleFinishItem}
     />
   );
 };

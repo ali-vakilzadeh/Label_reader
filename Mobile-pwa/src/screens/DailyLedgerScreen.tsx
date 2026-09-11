@@ -251,7 +251,7 @@ export const DailyLedgerScreen: React.FC<DailyLedgerScreenProps> = ({ onNavigate
                 className="flex items-center gap-2 px-4 min-h-[44px] rounded-[var(--radius-control)] bg-navy-800 text-cream-50 font-semibold text-[0.82rem] hover:bg-navy-700 cursor-pointer"
               >
                 <Camera className="w-4 h-4" />
-                <span>{t('Intake')}</span>
+                <span>{t('Scan')}</span>
               </button>
             )}
           </div>
