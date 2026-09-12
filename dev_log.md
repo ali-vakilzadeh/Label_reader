@@ -23,9 +23,9 @@
         
         [☑️] Middleware connectivity + AI Vision test  (30%)
         
-        [🔃] Developer stage debugging  (10%)
+        [☑️] Developer stage debugging  (10%)
         
-        [  ] End user stage debugging   (20%)
+        [☑️] End user stage debugging   (20%)
         
     [🔃] _Middleware_ (Progress: 90%)
     
@@ -37,9 +37,9 @@
         
         [☑️] Middleware connectivity + AI Vision test  (30%)
         
-        [🔃] Developer stage debugging  (10%)
+        [☑️] Developer stage debugging  (10%)
         
-        [  ] End user stage debugging   (20%)
+        [🔃] End user stage debugging   (20%)
         
     [🔃] _Analytical Dashboard_ (Progress: 30%)
     
@@ -47,19 +47,19 @@
         
         [🔃] prototype  (20%)
         
-        [  ] Demo mode  (10%)
+        [🔃] Demo mode  (10%)
         
-        [  ] Middleware connectivity + AI Vision test  (30%)
+        [🔃] Middleware connectivity + AI Vision test  (30%)
         
-        [  ] Developer stage debugging  (10%)
+        [🔃] Developer stage debugging  (10%)
         
-        [  ] End user stage debugging   (20%)
+        [🔃] End user stage debugging   (20%)
         
-[  ] Project Deploy on user server
+[☑️] Project Deploy on user server
 
-[  ] User Guide Pages
+[☑️] User Guide Pages
 
-[  ] Final Documentation
+[🔃] Final Documentation
 ```
 
 ## 2026-08-23
@@ -117,3 +117,11 @@
 - App successfully connected to backend server and started data exchange
 - App offline functionality tested ok
 - Server cache and retry tested ok
+
+## 2026-09-12
+
+- 17 changes implemented in Mobile App [Changes logged here](/docs/client_decisions_2026-09-04.md) 
+- End product delivered both as Android and PWA app
+- Middleware redesigned to match Mobile app requirements
+- More robust AI and communication error handling
+- Middleware and Analytical Dashboard are not deployed and operative on Client's property server
